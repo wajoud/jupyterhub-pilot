@@ -29,7 +29,7 @@ SSH into your Hub instance and run:
 git clone https://github.com/wajoud/jupyterhub-pilot.git
 
 # 2. Run the Hub setup script
-sudo bash JupyterHub-Pilot/scripts/install_hub.sh
+sudo bash jupyterhub-pilot/scripts/install_hub.sh
 ```
 
 When prompted, enter:
@@ -50,7 +50,7 @@ SSH into your Worker instance in a new terminal tab and run:
 git clone https://github.com/wajoud/jupyterhub-pilot.git
 
 # 2. Run the Worker setup script
-sudo bash JupyterHub-Pilot/scripts/install_worker.sh
+sudo bash jupyterhub-pilot/scripts/install_worker.sh
 ```
 
 When prompted:
