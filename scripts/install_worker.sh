@@ -48,7 +48,7 @@ if [ -z "$HUB_PUB_KEY" ]; then
     exit 1
 fi
 
-echo "$HUB_PUB_KEY" > /home/$ADMIN_USER/.ssh/authorized_keys
+echo "$HUB_PUB_KEY" >> /home/$ADMIN_USER/.ssh/authorized_keys
 chown -R $ADMIN_USER:$ADMIN_USER /home/$ADMIN_USER/.ssh
 chmod 600 /home/$ADMIN_USER/.ssh/authorized_keys
 
