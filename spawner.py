@@ -1,7 +1,7 @@
 """
 spawner.py
 ───────────
-JupyterPilot Custom SSH Spawner.
+JupyterHub-Pilot Custom SSH Spawner.
 
 Extends JupyterHub's ``Spawner`` to launch ``jupyterhub-singleuser`` on
 remote VMs via Paramiko SSH.  Session state is persisted in a local SQLite
@@ -53,9 +53,9 @@ except (ImportError, ModuleNotFoundError):
     _paramiko_ssh_exc = getattr(paramiko, "ssh_exception", paramiko)  # type: ignore
 from jupyterhub.spawner import Spawner
 
-from jupyterpilot.admin import RBACManager
-from jupyterpilot.session_store import SessionStore
-from jupyterpilot.vault_client import VaultClient
+from jupyterhub_pilot.admin import RBACManager
+from jupyterhub_pilot.session_store import SessionStore
+from jupyterhub_pilot.vault_client import VaultClient
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Module-level config bootstrap
@@ -84,7 +84,7 @@ MAPPING_FILE: str = os.path.join(
 # SQLite state DB (all session state + team mappings)
 _DB_PATH: str = hub_settings.get(
     "db_path",
-    os.path.join(BASE_DIR, "jupyterpilot_state.db"),
+    os.path.join(BASE_DIR, "jupyterhub_pilot_state.db"),
 )
 
 # Module-level singletons — created once when the module is imported.
@@ -272,10 +272,10 @@ class CustomSpawner(Spawner):
         sudo chown -R "{target_user}:{target_user}" "/home/{target_user}/.ssh"
         sudo chmod 600 "/home/{target_user}/.ssh/authorized_keys"
 
-        sudo -u "{target_user}" pip3 install jupyterhub notebook jupyterpilot[ai]@git+https://github.com/wajoud/JupyterPilot.git --break-system-packages
+        sudo -u "{target_user}" pip3 install jupyterhub notebook jupyterhub_pilot[ai]@git+https://github.com/wajoud/jupyterhub-pilot.git --break-system-packages
 
         # Copy the get_port.py script so port allocation works
-        sudo cp /opt/jupyterpilot/get_port.py "/home/{target_user}/get_port.py"
+        sudo cp /opt/jupyterhub-pilot/get_port.py "/home/{target_user}/get_port.py"
         sudo chown "{target_user}:{target_user}" "/home/{target_user}/get_port.py"
         """
 
@@ -356,7 +356,7 @@ class CustomSpawner(Spawner):
             If ``vault_enabled`` is ``true`` in ``hub_settings.json`` and
             ``VAULT_ADDR`` / ``VAULT_TOKEN`` are set in the Hub's environment,
             reads the user's secrets from HashiCorp Vault at
-            ``secret/jupyterpilot/<username>`` and merges them into
+            ``secret/jupyterhub-pilot/<username>`` and merges them into
             ``self.environment``.  JupyterHub automatically passes
             ``self.environment`` to the singleuser process at launch.
             Vault is opt-in; a missing/unreachable Vault is silently skipped.
@@ -387,7 +387,7 @@ class CustomSpawner(Spawner):
         # ── Task 3: Vault secret injection ────────────────────────────────────
         if hub_settings.get("vault_enabled", False):
             secret_path: str = hub_settings.get(
-                "vault_secret_path", "secret/jupyterpilot"
+                "vault_secret_path", "secret/jupyterhub-pilot"
             )
             vault = VaultClient(secret_base_path=secret_path)
             secrets = vault.get_user_secrets(username)

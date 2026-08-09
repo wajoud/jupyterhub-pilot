@@ -14,7 +14,7 @@
     "mapping_file": "user_mapping.json",
 
     "_comment_db": "Path to the SQLite state DB. Stores team→VM mappings and live per-user session state.",
-    "db_path": "/var/lib/jupyterhub/jupyterpilot_state.db",
+    "db_path": "/var/lib/jupyterhub/jupyterhub_pilot_state.db",
 
     "_comment_resources": "cgroups v2 hard limits enforced via systemd-run on the Worker VM. Set to null to disable.",
     "resource_limits": {
@@ -22,7 +22,7 @@
         "cpu_quota": "50%"
     },
 
-    "_comment_vault": "HashiCorp Vault integration. Secrets are read from secret/jupyterpilot/<username>. Set VAULT_ADDR and VAULT_TOKEN env vars on the Hub VM. Disable by omitting or setting vault_enabled to false.",
+    "_comment_vault": "HashiCorp Vault integration. Secrets are read from secret/jupyterhub-pilot/<username>. Set VAULT_ADDR and VAULT_TOKEN env vars on the Hub VM. Disable by omitting or setting vault_enabled to false.",
     "vault_enabled": false,
-    "vault_secret_path": "secret/jupyterpilot"
+    "vault_secret_path": "secret/jupyterhub-pilot"
 }

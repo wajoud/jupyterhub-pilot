@@ -1,5 +1,5 @@
 """
-jupyterpilot/provider.py
+jupyterhub_pilot/provider.py
 ────────────────────────
 LLM & MCP Connectivity Layer (Task 6).
 
@@ -10,8 +10,8 @@ Three pluggable backends selected by ``config["mode"]``:
   "mcp"    → Model Context Protocol server (stdio or HTTP)
 
 Config priority (highest → lowest):
-  1. ~/.jupyterpilot/config.json  (user-level)
-  2. /etc/jupyterpilot/config.json (system-level, written by install_hub.sh)
+  1. ~/.jupyterhub-pilot/config.json  (user-level)
+  2. /etc/jupyterhub-pilot/config.json (system-level, written by install_hub.sh)
   3. Vault-injected env vars at spawn time (Task 3 integration)
   4. Built-in defaults
 """
@@ -28,7 +28,7 @@ from typing import Any, Dict, List
 
 import requests
 
-log = logging.getLogger("jupyterpilot")
+log = logging.getLogger("jupyterhub_pilot")
 
 # ---------------------------------------------------------------------------
 # Default config
@@ -59,7 +59,7 @@ _DEFAULT_CONFIG: Dict[str, Any] = {
 }
 
 _SYSTEM_PROMPT = (
-    "You are JupyterPilot, an expert Python coding assistant running inside "
+    "You are JupyterHub-Pilot, an expert Python coding assistant running inside "
     "a Jupyter notebook. Return ONLY executable Python code — no markdown "
     "fences, no prose, no explanations unless explicitly asked."
 )
@@ -137,8 +137,8 @@ def _load_config_cached() -> str:
     (lru_cache requires hashable return types; callers call json.loads).
     """
     search_paths = [
-        os.path.expanduser("~/.jupyterpilot/config.json"),
-        "/etc/jupyterpilot/config.json",
+        os.path.expanduser("~/.jupyterhub-pilot/config.json"),
+        "/etc/jupyterhub-pilot/config.json",
     ]
     for path in search_paths:
         if os.path.exists(path):
@@ -221,7 +221,7 @@ class _CloudBackend:
         try:
             import litellm  # lazy import — only needed for cloud mode
         except ImportError:
-            return "# ❌ litellm not installed. Run: pip install jupyterpilot[ai]"
+            return "# ❌ litellm not installed. Run: pip install jupyterhub_pilot[ai]"
 
         for attempt in range(self._MAX_RETRIES):
             try:

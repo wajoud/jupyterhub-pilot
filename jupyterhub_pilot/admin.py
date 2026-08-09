@@ -1,7 +1,7 @@
 """
-jupyterpilot/admin.py
+jupyterhub_pilot/admin.py
 ──────────────────────
-Role-Based Access Control (RBAC) for JupyterPilot.
+Role-Based Access Control (RBAC) for JupyterHub-Pilot.
 
 Design decisions:
   - 2-tier model only: ``admin`` and ``user``.
@@ -39,7 +39,7 @@ Role = Literal["admin", "user"]
 
 class RBACManager:
     """
-    Lightweight RBAC helper for JupyterPilot.
+    Lightweight RBAC helper for JupyterHub-Pilot.
 
     All methods accept a *user* object that exposes:
       - ``user.name``  (str)

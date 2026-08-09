@@ -33,8 +33,8 @@ except (ImportError, ModuleNotFoundError):
     _paramiko_ssh_exc = getattr(paramiko, "ssh_exception", paramiko)  # type: ignore
 
 import spawner as spawner_module
-from jupyterpilot.admin import RBACManager
-from jupyterpilot.session_store import SessionStore
+from jupyterhub_pilot.admin import RBACManager
+from jupyterhub_pilot.session_store import SessionStore
 from spawner import CustomSpawner
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -66,7 +66,7 @@ def regular_user() -> MagicMock:
 @pytest.fixture
 def tmp_db(tmp_path) -> str:
     """Return the path to a fresh temporary SQLite DB."""
-    return str(tmp_path / "test_jupyterpilot.db")
+    return str(tmp_path / "test_jupyterhub_pilot.db")
 
 
 @pytest.fixture

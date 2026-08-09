@@ -1,7 +1,7 @@
 """
-jupyterpilot/extension.py
+jupyterhub_pilot/extension.py
 ─────────────────────────
-Core IPython magic commands for JupyterPilot (Tasks 7 & 8).
+Core IPython magic commands for JupyterHub-Pilot (Tasks 7 & 8).
 
 Magics
 ──────
@@ -207,7 +207,7 @@ def _get_last_traceback(shell) -> Optional[Tuple[str, str]]:
 
 
 @magics_class
-class JupyterPilotMagics(Magics):
+class JupyterHubPilotMagics(Magics):
     def __init__(self, shell):
         super().__init__(shell)
         self.provider = LLMProvider()
@@ -239,7 +239,7 @@ class JupyterPilotMagics(Magics):
             print("Usage: %do [--run] <what you want to do>\nExample: %do create a bar chart from df")
             return
 
-        print(f"# 🤖 JupyterPilot ({self.provider.mode}/{self.provider.active_model}) — generating …")
+        print(f"# 🤖 JupyterHub-Pilot ({self.provider.mode}/{self.provider.active_model}) — generating …")
         context = _get_context(self.shell)
         code = self.provider.generate(prompt, context)
 
@@ -264,7 +264,7 @@ class JupyterPilotMagics(Magics):
             print("ℹ️  Could not retrieve the last executed cell.")
             return
 
-        print("# 🔧 JupyterPilot — analysing error and generating fix …")
+        print("# 🔧 JupyterHub-Pilot — analysing error and generating fix …")
         context = _get_context(self.shell)
         prompt = (
             "The following Python code raised an exception. "
@@ -301,7 +301,7 @@ class JupyterPilotMagics(Magics):
 
         # Static analysis first
         print("=" * 60)
-        print("📋 JupyterPilot Code Review")
+        print("📋 JupyterHub-Pilot Code Review")
         print("=" * 60)
         print("\n🔍 Static Analysis (AST):")
         print(_analyse_ast(combined_source))
@@ -343,7 +343,7 @@ class JupyterPilotMagics(Magics):
         original = valid[-1]
         context = _get_context(self.shell)
 
-        print("# ♻️  JupyterPilot — reworking cell …")
+        print("# ♻️  JupyterHub-Pilot — reworking cell …")
         prompt = (
             "You are a senior Python engineer. Refactor the following code "
             "according to the instruction. Return ONLY the refactored Python code.\n\n"
@@ -380,11 +380,11 @@ class JupyterPilotMagics(Magics):
 
 
 def load_ipython_extension(ipython) -> None:
-    """Register JupyterPilot magics with the running IPython kernel."""
+    """Register JupyterHub-Pilot magics with the running IPython kernel."""
     # Ensure AI packages are available before registering magics
     ensure_ai_deps()
-    ipython.register_magics(JupyterPilotMagics(ipython))
+    ipython.register_magics(JupyterHubPilotMagics(ipython))
     print(
-        "✅ JupyterPilot loaded. Available: %do, %fix, %review, %rework\n"
+        "✅ JupyterHub-Pilot loaded. Available: %do, %fix, %review, %rework\n"
         "   Run %do? for help on any command."
     )

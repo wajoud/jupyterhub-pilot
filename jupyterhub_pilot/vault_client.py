@@ -1,7 +1,7 @@
 """
-jupyterpilot/vault_client.py
+jupyterhub_pilot/vault_client.py
 ─────────────────────────────
-HashiCorp Vault integration for JupyterPilot.
+HashiCorp Vault integration for JupyterHub-Pilot.
 
 Reads per-user secrets from Vault's KV v2 engine and returns them as a plain
 dict so the caller can inject them directly into ``os.environ`` / the spawner
@@ -15,7 +15,7 @@ Set these environment variables on the Hub VM before starting JupyterHub:
     VAULT_TOKEN  – Root or policy-scoped token with read access to the path
 
 Secret path convention:
-    ``secret/jupyterpilot/<username>``
+    ``secret/jupyterhub-pilot/<username>``
 
 All key-value pairs stored at that path are injected as env vars into the
 user's Jupyter kernel at spawn time.
@@ -28,7 +28,7 @@ continues uninterrupted — Vault is opt-in.
 
 Example::
 
-    client = VaultClient(secret_base_path="secret/jupyterpilot")
+    client = VaultClient(secret_base_path="secret/jupyterhub-pilot")
     secrets = client.get_user_secrets("alice")
     # {"DATABASE_URL": "postgres://...", "API_KEY": "sk-..."}
 """
@@ -52,9 +52,9 @@ class VaultClient:
     Lightweight HashiCorp Vault KV-v2 client using only ``requests``.
 
     Args:
-        secret_base_path: The KV mount + base path, e.g. ``"secret/jupyterpilot"``.
+        secret_base_path: The KV mount + base path, e.g. ``"secret/jupyterhub-pilot"``.
                           The username is appended automatically:
-                          ``secret/jupyterpilot/<username>``.
+                          ``secret/jupyterhub-pilot/<username>``.
 
     Attributes:
         _addr:  Vault server URL from ``VAULT_ADDR`` env var.
@@ -62,11 +62,11 @@ class VaultClient:
         _base:  The resolved KV v2 API base path.
     """
 
-    def __init__(self, secret_base_path: str = "secret/jupyterpilot") -> None:
+    def __init__(self, secret_base_path: str = "secret/jupyterhub-pilot") -> None:
         self._addr: str = os.environ.get("VAULT_ADDR", "").rstrip("/")
         self._token: str = os.environ.get("VAULT_TOKEN", "")
         # KV v2 API path: /v1/<mount>/data/<subpath>
-        # e.g. "secret/jupyterpilot" -> "/v1/secret/data/jupyterpilot"
+        # e.g. "secret/jupyterhub-pilot" -> "/v1/secret/data/jupyterhub_pilot"
         parts = secret_base_path.split("/", 1)
         mount = parts[0]
         subpath = parts[1] if len(parts) > 1 else ""

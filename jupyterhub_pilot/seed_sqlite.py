@@ -1,13 +1,13 @@
 """
-jupyterpilot/seed_sqlite.py
+jupyterhub_pilot/seed_sqlite.py
 ────────────────────────────
 CLI bootstrap script: load ``user_mapping.json`` into the SQLite DB.
 
 Run this once after first deploy (or after a DB file loss) to populate
 the ``team_mappings`` table from the existing JSON backup:
 
-    python -m jupyterpilot.seed_sqlite \\
-        --db  /var/lib/jupyterhub/jupyterpilot_state.db \\
+    python -m jupyterhub_pilot.seed_sqlite \\
+        --db  /var/lib/jupyterhub/jupyterhub_pilot_state.db \\
         --mapping  /etc/jupyterhub/user_mapping.json
 
 The script is idempotent: running it a second time on the same mapping
@@ -24,15 +24,15 @@ import sys
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="python -m jupyterpilot.seed_sqlite",
+        prog="python -m jupyterhub_pilot.seed_sqlite",
         description=(
-            "Seed the JupyterPilot SQLite state DB from a user_mapping.json file. "
+            "Seed the JupyterHub-Pilot SQLite state DB from a user_mapping.json file. "
             "Run once on first deploy or after DB file recovery."
         ),
     )
     parser.add_argument(
         "--db",
-        default="jupyterpilot_state.db",
+        default="jupyterhub_pilot_state.db",
         help="Path to the SQLite DB file (default: %(default)s)",
     )
     parser.add_argument(
@@ -70,7 +70,7 @@ def seed(db_path: str, mapping_path: str) -> None:
     # ── Import SessionStore (must be importable from this context) ─────────
     # Adjust sys.path so this script works both as a module and directly.
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-    from jupyterpilot.session_store import SessionStore  # noqa: PLC0415
+    from jupyterhub_pilot.session_store import SessionStore  # noqa: PLC0415
 
     store = SessionStore(db_path)
     store.init_db()

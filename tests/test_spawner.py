@@ -24,7 +24,7 @@ def mock_spawner_instance():
     import tempfile
 
     import spawner as spawner_module
-    from jupyterpilot.session_store import SessionStore
+    from jupyterhub_pilot.session_store import SessionStore
 
     instance = CustomSpawner()
     instance.user.name = "test_user"

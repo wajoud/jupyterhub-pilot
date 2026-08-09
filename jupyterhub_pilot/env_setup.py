@@ -1,5 +1,5 @@
 """
-jupyterpilot/env_setup.py
+jupyterhub_pilot/env_setup.py
 ─────────────────────────
 Controlled Environment Strategy (Task 5).
 
@@ -8,8 +8,8 @@ current Python environment before any magic commands are registered.
 
 Strategy (in priority order):
   1. If deps are already importable → no-op, instant return.
-  2. If a user venv exists at ~/.jupyterpilot/venv → activate it.
-  3. Try to create the venv and install jupyterpilot[ai] into it.
+  2. If a user venv exists at ~/.jupyterhub-pilot/venv → activate it.
+  3. Try to create the venv and install jupyterhub_pilot[ai] into it.
   4. If venv creation fails (e.g. python3-venv not installed) → fall back to
      installing deps directly via pip into the user's local site-packages.
      This keeps things working on stock Ubuntu without extra apt packages.
@@ -21,7 +21,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-_VENV_DIR = Path.home() / ".jupyterpilot" / "venv"
+_VENV_DIR = Path.home() / ".jupyterhub_pilot" / "venv"
 _AI_DEPS = ["ipython", "litellm"]  # mcp is optional — checked separately
 
 # PERF FIX: cache the dependency-check result so repeated ensure_ai_deps()
@@ -59,13 +59,13 @@ def _activate_venv() -> bool:
 
 def _create_venv() -> bool:
     """
-    Create ~/.jupyterpilot/venv and install AI deps into it.
+    Create ~/.jupyterhub-pilot/venv and install AI deps into it.
     Returns True on success, False if venv module is unavailable.
     """
     _VENV_DIR.mkdir(parents=True, exist_ok=True)
     python = sys.executable
 
-    print(f"[JupyterPilot] Creating AI venv at {_VENV_DIR} …")
+    print(f"[JupyterHub-Pilot] Creating AI venv at {_VENV_DIR} …")
     result = subprocess.run(
         [python, "-m", "venv", str(_VENV_DIR)],
         capture_output=True,
@@ -74,18 +74,18 @@ def _create_venv() -> bool:
     if result.returncode != 0:
         # python3-venv not installed — tell the user but don't crash
         print(
-            "[JupyterPilot] ⚠️  Could not create venv "
+            "[JupyterHub-Pilot] ⚠️  Could not create venv "
             f"(install python3-venv for full isolation):\n  {result.stderr.strip()}"
         )
         return False
 
     pip = _VENV_DIR / "bin" / "pip"
-    print("[JupyterPilot] Installing AI dependencies into venv (once-only) …")
+    print("[JupyterHub-Pilot] Installing AI dependencies into venv (once-only) …")
     subprocess.run(
-        [str(pip), "install", "--quiet", "jupyterpilot[ai]@git+https://github.com/wajoud/JupyterPilot.git"],
+        [str(pip), "install", "--quiet", "jupyterhub_pilot[ai]@git+https://github.com/wajoud/jupyterhub-pilot.git"],
         check=True,
     )
-    print("[JupyterPilot] ✅ AI dependencies installed into venv.")
+    print("[JupyterHub-Pilot] ✅ AI dependencies installed into venv.")
     return True
 
 
@@ -94,11 +94,11 @@ def _install_deps_inline() -> None:
     Fallback: install AI deps directly into the user's site-packages via pip.
     Used when venv creation fails (e.g. python3-venv not installed on Ubuntu).
     """
-    print("[JupyterPilot] Falling back to inline pip install of AI deps …")
+    print("[JupyterHub-Pilot] Falling back to inline pip install of AI deps …")
     subprocess.run(
         [
             sys.executable, "-m", "pip", "install", "--quiet",
-            "jupyterpilot[ai]@git+https://github.com/wajoud/JupyterPilot.git",
+            "jupyterhub_pilot[ai]@git+https://github.com/wajoud/jupyterhub-pilot.git",
             "--break-system-packages",
             "--user",
         ],
@@ -109,7 +109,7 @@ def _install_deps_inline() -> None:
     user_site = site.getusersitepackages()
     if user_site not in sys.path:
         sys.path.insert(0, user_site)
-    print("[JupyterPilot] ✅ AI dependencies installed (inline).")
+    print("[JupyterHub-Pilot] ✅ AI dependencies installed (inline).")
 
 
 def ensure_ai_deps() -> None:
@@ -148,15 +148,15 @@ def ensure_ai_deps() -> None:
         _install_deps_inline()
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(
-            "[JupyterPilot] Could not install AI dependencies automatically.\n"
-            "Run manually:  pip install 'jupyterpilot[ai]' --break-system-packages\n"
+            "[JupyterHub-Pilot] Could not install AI dependencies automatically.\n"
+            "Run manually:  pip install 'jupyterhub_pilot[ai]' --break-system-packages\n"
             f"Details: {exc}"
         ) from exc
 
     if not _deps_available():
         raise RuntimeError(
-            "[JupyterPilot] AI packages still not importable after install.\n"
+            "[JupyterHub-Pilot] AI packages still not importable after install.\n"
             "Try restarting the kernel after running:\n"
-            "  pip install 'jupyterpilot[ai]' --break-system-packages"
+            "  pip install 'jupyterhub_pilot[ai]' --break-system-packages"
         )
     _DEPS_OK = True

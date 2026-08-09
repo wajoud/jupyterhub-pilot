@@ -1,6 +1,6 @@
 # ☁️ AWS EC2 Automated Deployment Guide
 
-This guide walks through deploying JupyterPilot across two EC2 instances (a Hub node and a Worker node) using our automated bash setup scripts.
+This guide walks through deploying JupyterHub-Pilot across two EC2 instances (a Hub node and a Worker node) using our automated bash setup scripts.
 
 ## 🏗️ 1. AWS Infrastructure Setup
 
@@ -26,10 +26,10 @@ SSH into your Hub instance and run:
 
 ```bash
 # 1. Clone the repo (Ubuntu 26 doesn't support sudo bash <(curl...) process substitution)
-git clone https://github.com/wajoud/JupyterPilot.git
+git clone https://github.com/wajoud/jupyterhub-pilot.git
 
 # 2. Run the Hub setup script
-sudo bash JupyterPilot/scripts/install_hub.sh
+sudo bash JupyterHub-Pilot/scripts/install_hub.sh
 ```
 
 When prompted, enter:
@@ -47,10 +47,10 @@ SSH into your Worker instance in a new terminal tab and run:
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/wajoud/JupyterPilot.git
+git clone https://github.com/wajoud/jupyterhub-pilot.git
 
 # 2. Run the Worker setup script
-sudo bash JupyterPilot/scripts/install_worker.sh
+sudo bash JupyterHub-Pilot/scripts/install_worker.sh
 ```
 
 When prompted:
@@ -65,7 +65,7 @@ When prompted:
 On the **Hub VM**:
 
 ```bash
-python3 -m jupyterhub -f /opt/jupyterpilot/jupyterhub_config.py \
+python3 -m jupyterhub -f /opt/jupyterhub-pilot/jupyterhub_config.py \
     --JupyterHub.authenticator_class=dummy \
     --DummyAuthenticator.password=test
 ```
@@ -88,7 +88,7 @@ sudo adduser --disabled-password --gecos "" $NEW_USER
 sudo loginctl enable-linger $NEW_USER
 sudo -u $NEW_USER mkdir -p /home/$NEW_USER/notebook
 sudo -u $NEW_USER pip3 install jupyterhub notebook --break-system-packages
-sudo cp /opt/jupyterpilot/keys/worker.pub /tmp/hub_key.pub
+sudo cp /opt/jupyterhub-pilot/keys/worker.pub /tmp/hub_key.pub
 sudo mkdir -p /home/$NEW_USER/.ssh
 sudo cp /home/wajoud/.ssh/authorized_keys /home/$NEW_USER/.ssh/
 sudo chown -R $NEW_USER:$NEW_USER /home/$NEW_USER/.ssh

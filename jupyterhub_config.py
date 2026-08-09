@@ -18,7 +18,7 @@ with open(config_path, "r") as f:
 
 # Add custom spawner path dynamically
 sys.path.append(os.path.dirname(__file__))
-from jupyterpilot.monitoring_handler import (
+from jupyterhub_pilot.monitoring_handler import (
     AgentWebSocketHandler,
     BrowserWebSocketHandler,
     MonitoringPageHandler,
@@ -58,7 +58,7 @@ try:
     shutil.copy2(_src, _dst)  # always sync with installed JupyterHub version
 
     _monitoring_js = (
-        "\n<!-- JupyterPilot: Monitoring nav link -->\n"
+        "\n<!-- JupyterHub-Pilot: Monitoring nav link -->\n"
         "<script>\n"
         "document.addEventListener('DOMContentLoaded', function () {\n"
         "  var nav = document.querySelector('ul.navbar-nav');\n"
@@ -94,11 +94,11 @@ try:
 
     c.JupyterHub.template_paths = [_custom_templates]
     logging.getLogger("jupyterhub").info(
-        "JupyterPilot: Monitoring nav link injected into %s", _dst
+        "JupyterHub-Pilot: Monitoring nav link injected into %s", _dst
     )
 except Exception as _exc:
     logging.getLogger("jupyterhub").warning(
-        "JupyterPilot: Could not inject Monitoring nav link: %s", _exc
+        "JupyterHub-Pilot: Could not inject Monitoring nav link: %s", _exc
     )
 
 c.ConfigurableHTTPProxy.api_url = hub_settings["proxy_api_url"]

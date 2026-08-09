@@ -2,7 +2,7 @@ import os
 import sys
 
 # Ensure the root of the project is on sys.path so that the root-level
-# `jupyterpilot/` package and `spawner.py` are always importable in tests,
+# `jupyterhub_pilot/` package and `spawner.py` are always importable in tests,
 # even without a `pip install -e .` step.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 

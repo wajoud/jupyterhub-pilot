@@ -1,4 +1,4 @@
-# jupyterpilot package
+# jupyterhub_pilot package
 # The AI extension (extension.py) requires IPython which is only available
 # on Worker VMs inside notebook kernels. Import it lazily so the Hub-side
 # infrastructure (spawner, session_store, vault_client, etc.) can be imported

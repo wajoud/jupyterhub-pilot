@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🚀 JupyterPilot
+# 🚀 JupyterHub-Pilot
 
 **Enterprise-grade AI coding partner & secure multi-team notebook isolation for JupyterHub**
 
@@ -20,7 +20,7 @@
 
 | Section | What you'll learn |
 |---|---|
-| [🗺️ What is JupyterPilot?](#️-what-is-jupyterpilot) | High-level purpose and design philosophy |
+| [🗺️ What is JupyterHub-Pilot?](#️-what-is-jupyterhub_pilot) | High-level purpose and design philosophy |
 | [🏗️ Architecture: 1 Hub → Many Worker EC2s](#️-architecture-1-hub--many-worker-ec2s) | How a single hub routes 100s of users across multiple EC2s |
 | [👥 Use Case 1 — Multi-Team EC2 Routing](#-use-case-1--multi-team-ec2-routing) | Group A on EC2-1, Group B on EC2-2, automatically |
 | [🔐 Use Case 2 — Per-User Isolation & RBAC](#-use-case-2--per-user-isolation--rbac) | Each user gets their own OS account, process & resource cap |
@@ -34,21 +34,21 @@
 
 ---
 
-## 🗺️ What is JupyterPilot?
+## 🗺️ What is JupyterHub-Pilot?
 
-JupyterPilot solves two problems that every data team running JupyterHub eventually hits:
+JupyterHub-Pilot solves two problems that every data team running JupyterHub eventually hits:
 
 **Problem 1 — "How do we run notebooks for 100+ users without one user crashing everyone else?"**
-> JupyterPilot's SSH spawner teleports each user's notebook server onto an isolated EC2 worker, wraps it in cgroup resource limits, and tracks all sessions in SQLite so nothing is lost if the Hub reboots.
+> JupyterHub-Pilot's SSH spawner teleports each user's notebook server onto an isolated EC2 worker, wraps it in cgroup resource limits, and tracks all sessions in SQLite so nothing is lost if the Hub reboots.
 
 **Problem 2 — "How do we get AI coding assistance inside notebooks without a brittle plugin?"**
-> JupyterPilot's IPython extension adds four magic commands (`%do`, `%fix`, `%review`, `%rework`) that speak to any LLM backend — local Ollama, OpenAI, Claude, Gemini, or an MCP server — and inject clean Python directly into the next cell.
+> JupyterHub-Pilot's IPython extension adds four magic commands (`%do`, `%fix`, `%review`, `%rework`) that speak to any LLM backend — local Ollama, OpenAI, Claude, Gemini, or an MCP server — and inject clean Python directly into the next cell.
 
 ---
 
 ## 🏗️ Architecture: 1 Hub → Many Worker EC2s
 
-This is the **core deployment model** JupyterPilot is built for.
+This is the **core deployment model** JupyterHub-Pilot is built for.
 
 ```
                         ┌──────────────────────────────────────────┐
@@ -131,8 +131,8 @@ The Hub's proxy then routes `https://hub.yourco.com/user/alice/` → `10.0.1.10:
 **Step 2 — Seed the routing table into SQLite (run once on deploy):**
 
 ```bash
-python -m jupyterpilot.seed_sqlite \
-    --db      /var/lib/jupyterhub/jupyterpilot_state.db \
+python -m jupyterhub_pilot.seed_sqlite \
+    --db      /var/lib/jupyterhub/jupyterhub_pilot_state.db \
     --mapping /etc/jupyterhub/user_mapping.json
 # Output:
 #   ✓ group_a    → 10.0.1.10
@@ -158,8 +158,8 @@ That's it. From this point on:
 ```bash
 # On the Hub VM — no JupyterHub restart needed:
 python3 - <<'EOF'
-from jupyterpilot.session_store import SessionStore
-store = SessionStore("/var/lib/jupyterhub/jupyterpilot_state.db")
+from jupyterhub_pilot.session_store import SessionStore
+store = SessionStore("/var/lib/jupyterhub/jupyterhub_pilot_state.db")
 store.set_mapping("group_d", "10.0.1.40", "/etc/jupyterhub/keys/group_d.pem", "ubuntu")
 print("group_d is live!")
 EOF
@@ -187,7 +187,7 @@ spawner calls _provision_user_jit()
   ↓ sudo adduser --disabled-password alice
   ↓ sudo loginctl enable-linger alice      ← keeps process alive after SSH closes
   ↓ sudo mkdir /home/alice/notebook
-  ↓ sudo pip3 install jupyterhub notebook jupyterpilot[ai]
+  ↓ sudo pip3 install jupyterhub notebook jupyterhub_pilot[ai]
   ↓ copy Hub SSH key → /home/alice/.ssh/authorized_keys
   ↓
 spawner SSHes as alice, finds a free port, launches singleuser
@@ -247,15 +247,15 @@ No code changes, no restarts — promote a user to admin live via the UI.
 
 ```python
 # In any Jupyter cell:
-%load_ext jupyterpilot.extension
-# ✅ JupyterPilot loaded. Available: %do, %fix, %review, %rework
+%load_ext jupyterhub_pilot.extension
+# ✅ JupyterHub-Pilot loaded. Available: %do, %fix, %review, %rework
 ```
 
 Or auto-load in every session:
 
 ```bash
 mkdir -p ~/.ipython/profile_default/startup/
-echo "%load_ext jupyterpilot.extension" > ~/.ipython/profile_default/startup/00-jupyterpilot.ipy
+echo "%load_ext jupyterhub_pilot.extension" > ~/.ipython/profile_default/startup/00-jupyterhub_pilot.ipy
 ```
 
 ---
@@ -266,7 +266,7 @@ echo "%load_ext jupyterpilot.extension" > ~/.ipython/profile_default/startup/00-
 %do load the CSV at data/sales.csv, parse the date column, and plot monthly revenue
 ```
 
-JupyterPilot injects into the **next cell**:
+JupyterHub-Pilot injects into the **next cell**:
 
 ```python
 import pandas as pd
@@ -302,7 +302,7 @@ df.groupby('date')['revenue'].sum().plot()
 ```python
 # Just run:
 %fix
-# 🔧 JupyterPilot — analysing error and generating fix …
+# 🔧 JupyterHub-Pilot — analysing error and generating fix …
 # Injects into next cell:
 df['date'] = pd.to_datetime(df['date'])
 df.groupby('date')['revenue'].sum().plot()
@@ -322,7 +322,7 @@ df.groupby('date')['revenue'].sum().plot()
 
 ```
 ============================================================
-📋 JupyterPilot Code Review
+📋 JupyterHub-Pilot Code Review
 ============================================================
 
 🔍 Static Analysis (AST):
@@ -370,7 +370,7 @@ With `--diff`:
 ────────────────────────────────────────────────────────────
 ```
 
-### LLM Backend Configuration (`~/.jupyterpilot/config.json`)
+### LLM Backend Configuration (`~/.jupyterhub-pilot/config.json`)
 
 ```json
 {
@@ -421,7 +421,7 @@ With `--diff`:
 User spawns →
   pre_spawn_hook() →
     VaultClient.get_user_secrets("alice") →
-      GET https://vault.internal/v1/secret/data/jupyterpilot/alice →
+      GET https://vault.internal/v1/secret/data/jupyterhub_pilot/alice →
         {"OPENAI_API_KEY": "sk-alice-...", "DATABASE_URL": "postgres://..."}
   ↓
   self.environment.update(secrets)
@@ -445,17 +445,17 @@ export VAULT_TOKEN=your-policy-scoped-token
 // hub_settings.json
 {
   "vault_enabled": true,
-  "vault_secret_path": "secret/jupyterpilot"
+  "vault_secret_path": "secret/jupyterhub-pilot"
 }
 ```
 
 ```bash
 # Store each user's secrets in Vault:
-vault kv put secret/jupyterpilot/alice \
+vault kv put secret/jupyterhub-pilot/alice \
     OPENAI_API_KEY="sk-alice-..." \
     DATABASE_URL="postgres://alice:pass@db.internal/mydb"
 
-vault kv put secret/jupyterpilot/bob \
+vault kv put secret/jupyterhub-pilot/bob \
     OPENAI_API_KEY="sk-bob-..." \
     S3_BUCKET="bob-data-bucket"
 ```
@@ -485,7 +485,7 @@ Browser (monitoring.html)
 ### Start the agent on each worker EC2
 
 ```bash
-python3 /opt/jupyterpilot/jupyterpilot/metrics_agent.py \
+python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py \
     --hub      ws://10.0.0.10:8000/monitoring/ws \
     --interval 2
 ```
@@ -493,13 +493,13 @@ python3 /opt/jupyterpilot/jupyterpilot/metrics_agent.py \
 Or as a systemd service so it survives reboots:
 
 ```ini
-# /etc/systemd/system/jupyterpilot-agent.service
+# /etc/systemd/system/jupyterhub_pilot-agent.service
 [Unit]
-Description=JupyterPilot Metrics Agent
+Description=JupyterHub-Pilot Metrics Agent
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /opt/jupyterpilot/jupyterpilot/metrics_agent.py \
+ExecStart=/usr/bin/python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py \
     --hub ws://10.0.0.10:8000/monitoring/ws --interval 2
 Restart=always
 RestartSec=5
@@ -509,7 +509,7 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-sudo systemctl enable --now jupyterpilot-agent
+sudo systemctl enable --now jupyterhub_pilot-agent
 ```
 
 **Visit `http://<HUB-PUBLIC-IP>:8000/monitoring` to see the live dashboard.**
@@ -543,7 +543,7 @@ Every spawn writes a row to `user_sessions`:
 | `bob` | `10.0.1.10` | `8902` | `4830` | `running` | `group_a` |
 | `carol` | `10.0.1.20` | `8901` | `5012` | `running` | `group_b` |
 
-The SQLite DB lives at `/var/lib/jupyterhub/jupyterpilot_state.db` — **outside** the Python process. After a Hub restart:
+The SQLite DB lives at `/var/lib/jupyterhub/jupyterhub_pilot_state.db` — **outside** the Python process. After a Hub restart:
 
 1. `poll()` reads `vm_ip` from SQLite (not from `self.ip`, which is empty after restart)
 2. SSHes to the worker EC2 and checks if the PID is still alive
@@ -566,7 +566,7 @@ Quick outline of what it covers:
 
 | Step | What you are doing |
 |---|---|
-| [Step 1 — Hub EC2 Setup](INSTALL.md#-step-1--hub-ec2-setup) | Install JupyterPilot, configure hub_settings.json, generate SSH key |
+| [Step 1 — Hub EC2 Setup](INSTALL.md#-step-1--hub-ec2-setup) | Install JupyterHub-Pilot, configure hub_settings.json, generate SSH key |
 | [Step 2 — Worker EC2 Setup](INSTALL.md#-step-2--worker-ec2-setup) | Install jupyterhub-singleuser, get_port.py, enable lingering |
 | [Step 3 — SSH Key Exchange](INSTALL.md#-step-3--ssh-key-exchange) | Paste Hub public key into each worker's authorized_keys |
 | [Step 4 — Register Workers](INSTALL.md#-step-4--register-worker-ec2s) | Seed user_mapping.json into SQLite |
@@ -582,14 +582,14 @@ Quick outline of what it covers:
 ## 📦 Repository Structure
 
 ```
-JupyterPilot/
+JupyterHub-Pilot/
 ├── spawner.py                      # SSH spawner — RBAC, cgroups, Vault, crash recovery
 ├── jupyterhub_config.py            # JupyterHub daemon config
-├── jupyterpilot_extension.py       # Standalone IPython extension entry point
+├── jupyterhub_pilot_extension.py       # Standalone IPython extension entry point
 ├── hub_settings.json               # Network, auth, resource limits & Vault config
 ├── user_mapping.json               # Worker EC2 routing (seed source / SQLite fallback)
 │
-├── jupyterpilot/                   # Core package
+├── jupyterhub_pilot/                   # Core package
 │   ├── __init__.py                 #   Version & lazy extension loader
 │   ├── admin.py                    #   RBACManager — 2-tier role enforcement
 │   ├── session_store.py            #   SQLite: team_mappings + user_sessions tables
@@ -667,7 +667,7 @@ Expected:
 | **Task 2** — cgroups v2 Isolation | ✅ Done | `systemd-run` hard `MemoryMax` + `CPUQuota` via `pre_spawn_hook` |
 | **Task 3** — Vault Secret Injection | ✅ Done | KV-v2 client; zero-disk env injection at spawn; graceful degradation |
 | **Task 4** — Live Monitoring Dashboard | ✅ Done | psutil agent → WebSocket → dark-mode real-time dashboard |
-| **Task 5** — Controlled Env Strategy | ✅ Done | User venv at `~/.jupyterpilot/venv`; `[ai]` optional package extra |
+| **Task 5** — Controlled Env Strategy | ✅ Done | User venv at `~/.jupyterhub-pilot/venv`; `[ai]` optional package extra |
 | **Task 6** — LLM & MCP Connectivity | ✅ Done | 3 backends (Ollama, LiteLLM, MCP) with retry, rate-limiting & Vault key reads |
 | **Task 7** — Core Magics | ✅ Done | `%do`, `%fix` with cell context, traceback stripping, `--run` flag |
 | **Task 8** — Agentic Magics | ✅ Done | `%review` (AST + LLM) and `%rework --diff` (unified diff preview) |
@@ -686,8 +686,8 @@ Expected:
 
 ```bash
 # Development setup:
-git clone https://github.com/wajoud/JupyterPilot.git
-cd JupyterPilot
+git clone https://github.com/wajoud/jupyterhub-pilot.git
+cd JupyterHub-Pilot
 pip install -e ".[dev]"
 pytest -v tests/   # all 107 should pass
 ```

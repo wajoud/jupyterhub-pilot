@@ -1,7 +1,7 @@
 """
-jupyterpilot/monitoring_handler.py
+jupyterhub_pilot/monitoring_handler.py
 ────────────────────────────────────
-Tornado handlers for the JupyterPilot live monitoring dashboard.
+Tornado handlers for the JupyterHub-Pilot live monitoring dashboard.
 
 Two handlers are registered:
 
@@ -19,7 +19,7 @@ MonitoringPageHandler  (``/monitoring``)
 
 Usage (wire in jupyterhub_config.py)
 ──────────────────────────────────────
-    from jupyterpilot.monitoring_handler import (
+    from jupyterhub_pilot.monitoring_handler import (
         AgentWebSocketHandler,
         MonitoringPageHandler,
         BrowserWebSocketHandler,
@@ -194,7 +194,7 @@ class MonitoringPageHandler(web.RequestHandler):
                 self.set_status(500)
                 self.write(
                     "Monitoring dashboard HTML not found. "
-                    "Ensure jupyterpilot/static/monitoring.html exists."
+                    "Ensure jupyterhub_pilot/static/monitoring.html exists."
                 )
                 return
         self.set_header("Content-Type", "text/html; charset=utf-8")

@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from jupyterpilot.provider import (
+from jupyterhub_pilot.provider import (
     LLMProvider,
     _CloudBackend,
     _LocalBackend,
@@ -86,7 +86,7 @@ class TestLocalBackend:
             "timeout": 5,
         })
 
-    @patch("jupyterpilot.provider.requests.post")
+    @patch("jupyterhub_pilot.provider.requests.post")
     def test_generate_returns_cleaned_code(self, mock_post):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"response": "```python\nx = 1\n```"}
@@ -97,7 +97,7 @@ class TestLocalBackend:
         result = backend.generate("create a variable x")
         assert "x = 1" in result
 
-    @patch("jupyterpilot.provider.requests.post")
+    @patch("jupyterhub_pilot.provider.requests.post")
     def test_generates_plain_code(self, mock_post):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"response": "print('hello')"}
@@ -108,13 +108,13 @@ class TestLocalBackend:
         result = backend.generate("print hello")
         assert "print" in result
 
-    @patch("jupyterpilot.provider.requests.post", side_effect=Exception("Connection refused"))
+    @patch("jupyterhub_pilot.provider.requests.post", side_effect=Exception("Connection refused"))
     def test_generate_returns_error_comment_on_failure(self, mock_post):
         backend = self._backend()
         result = backend.generate("anything")
         assert result.startswith("# ❌")
 
-    @patch("jupyterpilot.provider.requests.post")
+    @patch("jupyterhub_pilot.provider.requests.post")
     def test_uses_env_var_url_override(self, mock_post):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"response": "x = 42"}
@@ -147,7 +147,7 @@ class TestCloudBackend:
         _CloudBackend({"provider": "openai", "api_key": "sk-test-123"})
         assert os.environ.get("OPENAI_API_KEY") == "sk-test-123"
 
-    @patch("jupyterpilot.provider._CloudBackend.generate")
+    @patch("jupyterhub_pilot.provider._CloudBackend.generate")
     def test_generate_calls_litellm(self, mock_gen):
         mock_gen.return_value = "x = 1"
         backend = self._backend()
@@ -179,7 +179,7 @@ class TestMCPBackend:
         result = backend.generate("anything")
         assert "❌" in result
 
-    @patch("jupyterpilot.provider.requests.post")
+    @patch("jupyterhub_pilot.provider.requests.post")
     def test_generate_calls_tools_call_endpoint(self, mock_post):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
@@ -195,7 +195,7 @@ class TestMCPBackend:
         call_url = mock_post.call_args[0][0]
         assert "/mcp" in call_url
 
-    @patch("jupyterpilot.provider.requests.post", side_effect=Exception("unreachable"))
+    @patch("jupyterhub_pilot.provider.requests.post", side_effect=Exception("unreachable"))
     def test_generate_returns_error_on_failure(self, mock_post):
         backend = self._backend()
         result = backend.generate("anything")
@@ -209,7 +209,7 @@ class TestMCPBackend:
 
 class TestLLMProvider:
     def test_defaults_to_local_mode(self):
-        with patch("jupyterpilot.provider.LLMProvider._load_config", return_value={
+        with patch("jupyterhub_pilot.provider.LLMProvider._load_config", return_value={
             "mode": "local",
             "local": {"url": "http://localhost:11434/api/generate", "model": "qwen2.5-coder:7b"},
             "rate_limit": {"requests_per_minute": 120},
@@ -218,7 +218,7 @@ class TestLLMProvider:
             assert provider.mode == "local"
 
     def test_builds_cloud_backend(self):
-        with patch("jupyterpilot.provider.LLMProvider._load_config", return_value={
+        with patch("jupyterhub_pilot.provider.LLMProvider._load_config", return_value={
             "mode": "cloud",
             "cloud": {"provider": "openai", "model": "gpt-4o-mini"},
             "rate_limit": {"requests_per_minute": 120},
@@ -227,7 +227,7 @@ class TestLLMProvider:
             assert isinstance(provider._backend, _CloudBackend)
 
     def test_builds_mcp_backend(self):
-        with patch("jupyterpilot.provider.LLMProvider._load_config", return_value={
+        with patch("jupyterhub_pilot.provider.LLMProvider._load_config", return_value={
             "mode": "mcp",
             "mcp": {"server_url": "http://localhost:3000", "tools": ["run"]},
             "rate_limit": {"requests_per_minute": 120},
@@ -236,7 +236,7 @@ class TestLLMProvider:
             assert isinstance(provider._backend, _MCPBackend)
 
     def test_generate_builds_full_prompt(self):
-        with patch("jupyterpilot.provider.LLMProvider._load_config", return_value={
+        with patch("jupyterhub_pilot.provider.LLMProvider._load_config", return_value={
             "mode": "local",
             "local": {"url": "http://x", "model": "m"},
             "rate_limit": {"requests_per_minute": 120},

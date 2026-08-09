@@ -3,24 +3,63 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "jupyterpilot"
+name = "jupyterhub-pilot"
 version = "0.2.0"
 description = "Agentic AI coding partner for JupyterHub and IPython"
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = [
-    # Hub-side infrastructure (always installed)
-    "requests>=2.31.0",
-    "paramiko>=3.4.0",
-    "psutil>=5.9.0",
-    "websockets>=12.0",
-]
+license = {file = "LICENSE"}
 authors = [
     {name = "Wajoud", email = "wajoud@example.com"}
 ]
+keywords = [
+    "jupyter",
+    "jupyterhub",
+    "ai",
+    "llm",
+    "ipython",
+    "magic-commands",
+    "ssh-spawner"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Framework :: Jupyter",
+]
+dependencies = [
+    # Core dependencies used by both hub and worker
+    "requests>=2.31.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/wajoud/jupyterhub-pilot"
+Repository = "https://github.com/wajoud/jupyterhub-pilot.git"
+"Bug Tracker" = "https://github.com/wajoud/jupyterhub-pilot/issues"
 
 [project.optional-dependencies]
-# Install AI features: pip install jupyterpilot[ai]
+# Hub-side dependencies: pip install jupyterhub_pilot[hub]
+hub = [
+    "jupyterhub",
+    "paramiko>=3.4.0",
+    "websockets>=12.0",
+]
+# Worker-side dependencies: pip install jupyterhub_pilot[worker]
+worker = [
+    "jupyterhub",
+    "notebook",
+    "psutil>=5.9.0",
+    "websockets>=12.0",
+]
+# Install AI features: pip install jupyterhub_pilot[ai]
 ai = [
     "ipython>=8.0.0",
     "litellm>=1.30.0",
@@ -39,4 +78,4 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["jupyterpilot*"]
+include = ["jupyterhub_pilot*"]

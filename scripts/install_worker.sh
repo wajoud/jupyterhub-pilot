@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# install_worker.sh - Automates the Worker VM setup for JupyterPilot
+# install_worker.sh - Automates the Worker VM setup for JupyterHub-Pilot
 set -e
 
-echo "🚀 JupyterPilot Worker VM Setup"
+echo "🚀 JupyterHub-Pilot Worker VM Setup"
 echo "────────────────────────────────────"
 
 # Ensure script is run with sudo
@@ -15,12 +15,12 @@ echo "📦 1. Installing OS dependencies..."
 apt update -y
 apt install -y python3-pip python3.12-venv net-tools psmisc
 
-echo "📥 2. Cloning JupyterPilot repository..."
-if [ -d "/opt/jupyterpilot" ]; then
-    echo "ℹ️  /opt/jupyterpilot already exists. Updating..."
-    cd /opt/jupyterpilot && git pull && cd -
+echo "📥 2. Cloning JupyterHub-Pilot repository..."
+if [ -d "/opt/jupyterhub-pilot" ]; then
+    echo "ℹ️  /opt/jupyterhub-pilot already exists. Updating..."
+    cd /opt/jupyterhub-pilot && git pull && cd -
 else
-    git clone https://github.com/wajoud/JupyterPilot.git /opt/jupyterpilot
+    git clone https://github.com/wajoud/jupyterhub-pilot.git /opt/jupyterhub-pilot
 fi
 
 # Ask for admin username
@@ -56,7 +56,7 @@ echo "🛡️ 5. Installing global dependencies for Metrics Agent..."
 pip3 install psutil websockets --break-system-packages # Install globally for the metrics agent
 
 echo "🔌 6. Setting up Port Allocation script for JIT provisioner..."
-cat > /opt/jupyterpilot/get_port.py << 'EOF'
+cat > /opt/jupyterhub-pilot/get_port.py << 'EOF'
 import socket
 s = socket.socket()
 s.bind(('', 0))
@@ -64,20 +64,20 @@ port = s.getsockname()[1]
 s.close()
 print(port)
 EOF
-chmod +x /opt/jupyterpilot/get_port.py
+chmod +x /opt/jupyterhub-pilot/get_port.py
 
 echo "📊 8. Configuring the Metrics Agent systemd service..."
 read -p "Enter the Hub's Private IP (to connect the agent to): " HUB_IP
 
-cat > /etc/systemd/system/jupyterpilot-metrics.service << EOF
+cat > /etc/systemd/system/jupyterhub_pilot-metrics.service << EOF
 [Unit]
-Description=JupyterPilot Metrics Agent
+Description=JupyterHub-Pilot Metrics Agent
 After=network.target
 
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/bin/python3 /opt/jupyterpilot/jupyterpilot/metrics_agent.py --hub ws://$HUB_IP:8000/monitoring/ws
+ExecStart=/usr/bin/python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py --hub ws://$HUB_IP:8000/monitoring/ws
 Restart=always
 RestartSec=5
 
@@ -86,12 +86,12 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable jupyterpilot-metrics
-systemctl restart jupyterpilot-metrics
+systemctl enable jupyterhub_pilot-metrics
+systemctl restart jupyterhub_pilot-metrics
 
 echo ""
 echo "🎉 Worker Setup Complete!"
 echo "────────────────────────────────────"
 echo "Isolated user '$JUPYTER_USER' is ready on this Worker VM."
 echo "The metrics agent is running in the background. Check logs with:"
-echo "sudo journalctl -u jupyterpilot-metrics -f"
+echo "sudo journalctl -u jupyterhub_pilot-metrics -f"

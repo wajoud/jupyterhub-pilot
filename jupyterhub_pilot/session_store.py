@@ -1,7 +1,7 @@
 """
-jupyterpilot/session_store.py
+jupyterhub_pilot/session_store.py
 ─────────────────────────────
-SQLite-backed session store for JupyterPilot.
+SQLite-backed session store for JupyterHub-Pilot.
 
 Replaces user_mapping.json as the live source of truth for:
   - Team → VM routing  (table: team_mappings)
@@ -76,15 +76,15 @@ PRAGMA synchronous=NORMAL;
 class SessionStore:
     """
     Thread-safe SQLite wrapper providing team mapping lookups and per-user
-    session state management for the JupyterPilot SSH spawner.
+    session state management for the JupyterHub-Pilot SSH spawner.
 
     Args:
         db_path: Absolute path to the SQLite database file.
-                 Defaults to ``jupyterpilot_state.db`` in the current directory.
+                 Defaults to ``jupyterhub_pilot_state.db`` in the current directory.
 
     Example::
 
-        store = SessionStore("/var/lib/jupyterhub/jupyterpilot_state.db")
+        store = SessionStore("/var/lib/jupyterhub/jupyterhub_pilot_state.db")
         store.init_db()
 
         store.set_mapping("team_alpha", "10.0.1.15", "/etc/keys/alpha.pem")
@@ -93,7 +93,7 @@ class SessionStore:
         #  'ssh_key': '/etc/keys/alpha.pem', 'ssh_user': None}
     """
 
-    def __init__(self, db_path: str = "jupyterpilot_state.db") -> None:
+    def __init__(self, db_path: str = "jupyterhub_pilot_state.db") -> None:
         self._db_path: str = db_path
         # PERF FIX: persistent read connection — avoids open/close overhead
         # on every get_mapping / get_session call.

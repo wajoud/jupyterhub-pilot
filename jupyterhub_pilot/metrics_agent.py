@@ -1,7 +1,7 @@
 """
-jupyterpilot/metrics_agent.py
+jupyterhub_pilot/metrics_agent.py
 ──────────────────────────────
-Lightweight psutil-based metrics agent for JupyterPilot Worker VMs.
+Lightweight psutil-based metrics agent for JupyterHub-Pilot Worker VMs.
 
 Run this script on each Worker VM. It collects live system metrics every
 2 seconds and streams them as JSON to the Hub's WebSocket monitoring endpoint.
@@ -19,7 +19,7 @@ Metrics collected
 Usage
 ─────
     # On the Worker VM:
-    python3 /opt/jupyterpilot/jupyterpilot/metrics_agent.py \\
+    python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py \\
         --hub ws://172.31.30.186:8000/monitoring/ws \\
         --interval 2
 
@@ -199,7 +199,7 @@ async def _stream(hub_ws_url: str, interval: float) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="JupyterPilot metrics agent — streams psutil metrics to the Hub."
+        description="JupyterHub-Pilot metrics agent — streams psutil metrics to the Hub."
     )
     parser.add_argument(
         "--hub",

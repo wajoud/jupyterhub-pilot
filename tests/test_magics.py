@@ -1,7 +1,7 @@
 """
 tests/test_magics.py
 ────────────────────
-Unit tests for all JupyterPilot magic commands (Tasks 7 & 8).
+Unit tests for all JupyterHub-Pilot magic commands (Tasks 7 & 8).
 
 Uses a minimal fake IPython shell — no real kernel needed.
 """
@@ -14,8 +14,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from jupyterpilot.extension import (
-    JupyterPilotMagics,
+from jupyterhub_pilot.extension import (
+    JupyterHubPilotMagics,
     _analyse_ast,
     _clean_traceback,
     _get_context,
@@ -41,7 +41,7 @@ def _make_shell(history=None, ns=None):
 
 def _make_magics(history=None, ns=None, provider_response="x = 1"):
     shell = _make_shell(history=history, ns=ns)
-    magics = JupyterPilotMagics.__new__(JupyterPilotMagics)
+    magics = JupyterHubPilotMagics.__new__(JupyterHubPilotMagics)
     magics.shell = shell
     magics.provider = MagicMock()
     magics.provider.generate.return_value = provider_response

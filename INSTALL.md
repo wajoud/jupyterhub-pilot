@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🛠️ JupyterPilot — Installation Guide
+# 🛠️ JupyterHub-Pilot — Installation Guide
 
 **Step-by-step setup for the Hub VM and every Worker EC2**
 
@@ -15,7 +15,7 @@
 | Step | What you are doing |
 |---|---|
 | [Prerequisites](#-prerequisites) | What you need before you start |
-| [Step 1 — Hub EC2 Setup](#-step-1--hub-ec2-setup) | Install JupyterPilot, configure the hub, bootstrap SQLite |
+| [Step 1 — Hub EC2 Setup](#-step-1--hub-ec2-setup) | Install JupyterHub-Pilot, configure the hub, bootstrap SQLite |
 | [Step 2 — Worker EC2 Setup](#-step-2--worker-ec2-setup) | Prepare each worker EC2 to receive SSH spawns |
 | [Step 3 — SSH Key Exchange](#-step-3--ssh-key-exchange) | Trust the Hub key on every worker |
 | [Step 4 — Register Worker EC2s](#-step-4--register-worker-ec2s) | Tell the Hub which group maps to which EC2 |
@@ -75,18 +75,18 @@ sudo apt-get update
 sudo apt-get install -y python3-pip python3-venv git net-tools
 ```
 
-### 1b. Clone and install JupyterPilot
+### 1b. Clone and install JupyterHub-Pilot
 
 ```bash
-sudo git clone https://github.com/wajoud/JupyterPilot.git /opt/jupyterpilot
-cd /opt/jupyterpilot
+sudo git clone https://github.com/wajoud/jupyterhub-pilot.git /opt/jupyterhub-pilot
+cd /opt/jupyterhub-pilot
 sudo pip3 install -e . --break-system-packages
 ```
 
 ### 1c. Configure hub_settings.json
 
 ```bash
-sudo nano /opt/jupyterpilot/hub_settings.json
+sudo nano /opt/jupyterhub-pilot/hub_settings.json
 ```
 
 Fill in your values — replace `10.0.0.10` with your **Hub's private IP**:
@@ -103,7 +103,7 @@ Fill in your values — replace `10.0.0.10` with your **Hub's private IP**:
   "admin_users":   ["admin@your-company.com"],
 
   "mapping_file":  "user_mapping.json",
-  "db_path":       "/var/lib/jupyterhub/jupyterpilot_state.db",
+  "db_path":       "/var/lib/jupyterhub/jupyterhub_pilot_state.db",
 
   "resource_limits": {
     "memory_max": "2G",
@@ -111,22 +111,22 @@ Fill in your values — replace `10.0.0.10` with your **Hub's private IP**:
   },
 
   "vault_enabled":     false,
-  "vault_secret_path": "secret/jupyterpilot"
+  "vault_secret_path": "secret/jupyterhub-pilot"
 }
 ```
 
 ### 1d. Generate the Hub SSH keypair
 
-The Hub needs an SSH key to connect to Worker EC2s. This key is dedicated to JupyterPilot — do not reuse your personal key.
+The Hub needs an SSH key to connect to Worker EC2s. This key is dedicated to JupyterHub-Pilot — do not reuse your personal key.
 
 ```bash
-sudo mkdir -p /opt/jupyterpilot/keys
-sudo ssh-keygen -t ed25519 -f /opt/jupyterpilot/keys/hub_worker -N ""
-sudo chmod 600 /opt/jupyterpilot/keys/hub_worker
+sudo mkdir -p /opt/jupyterhub-pilot/keys
+sudo ssh-keygen -t ed25519 -f /opt/jupyterhub-pilot/keys/hub_worker -N ""
+sudo chmod 600 /opt/jupyterhub-pilot/keys/hub_worker
 
 echo ""
 echo "=== Hub Public Key (copy this — you will need it in Step 3) ==="
-sudo cat /opt/jupyterpilot/keys/hub_worker.pub
+sudo cat /opt/jupyterhub-pilot/keys/hub_worker.pub
 ```
 
 **Copy and save the public key output** — it starts with `ssh-ed25519 ...`. You will paste it onto every Worker EC2 in Step 3.
@@ -167,8 +167,8 @@ sudo pip3 install jupyterhub notebook --break-system-packages
 ### 2c. Clone the repo on the worker
 
 ```bash
-sudo git clone https://github.com/wajoud/JupyterPilot.git /opt/jupyterpilot
-sudo pip3 install -e /opt/jupyterpilot --break-system-packages
+sudo git clone https://github.com/wajoud/jupyterhub-pilot.git /opt/jupyterhub-pilot
+sudo pip3 install -e /opt/jupyterhub-pilot --break-system-packages
 ```
 
 ### 2d. Create the get_port.py script
@@ -229,7 +229,7 @@ chmod 600 ~/.ssh/authorized_keys
 
 ```bash
 # Replace 10.0.1.10 with your worker's private IP:
-ssh -i /opt/jupyterpilot/keys/hub_worker \
+ssh -i /opt/jupyterhub-pilot/keys/hub_worker \
     -o StrictHostKeyChecking=no \
     ubuntu@10.0.1.10 "echo SSH connection successful"
 
@@ -248,7 +248,7 @@ This tells the Hub which JupyterHub group maps to which Worker EC2.
 ### 4a. Edit user_mapping.json on the Hub
 
 ```bash
-sudo nano /opt/jupyterpilot/user_mapping.json
+sudo nano /opt/jupyterhub-pilot/user_mapping.json
 ```
 
 Add one entry per worker EC2:
@@ -257,12 +257,12 @@ Add one entry per worker EC2:
 {
   "group_a": {
     "server_ip":      "10.0.1.10",
-    "server_ssh_key": "/opt/jupyterpilot/keys/hub_worker",
+    "server_ssh_key": "/opt/jupyterhub-pilot/keys/hub_worker",
     "admin_ssh_user": "ubuntu"
   },
   "group_b": {
     "server_ip":      "10.0.1.20",
-    "server_ssh_key": "/opt/jupyterpilot/keys/hub_worker",
+    "server_ssh_key": "/opt/jupyterhub-pilot/keys/hub_worker",
     "admin_ssh_user": "ubuntu"
   }
 }
@@ -273,9 +273,9 @@ Add one entry per worker EC2:
 ### 4b. Seed the routing table into SQLite
 
 ```bash
-python3 -m jupyterpilot.seed_sqlite \
-    --db      /var/lib/jupyterhub/jupyterpilot_state.db \
-    --mapping /opt/jupyterpilot/user_mapping.json
+python3 -m jupyterhub_pilot.seed_sqlite \
+    --db      /var/lib/jupyterhub/jupyterhub_pilot_state.db \
+    --mapping /opt/jupyterhub-pilot/user_mapping.json
 ```
 
 Expected output:
@@ -285,16 +285,16 @@ Expected output:
   ✓ group_b                          → 10.0.1.20
 
 [DONE] Seeded 2 team(s), skipped 0.
-       DB: /var/lib/jupyterhub/jupyterpilot_state.db
+       DB: /var/lib/jupyterhub/jupyterhub_pilot_state.db
 ```
 
 ### Adding more workers later (no restart needed)
 
 ```bash
 python3 -c "
-from jupyterpilot.session_store import SessionStore
-s = SessionStore('/var/lib/jupyterhub/jupyterpilot_state.db')
-s.set_mapping('group_c', '10.0.1.30', '/opt/jupyterpilot/keys/hub_worker', 'ubuntu')
+from jupyterhub_pilot.session_store import SessionStore
+s = SessionStore('/var/lib/jupyterhub/jupyterhub_pilot_state.db')
+s.set_mapping('group_c', '10.0.1.30', '/opt/jupyterhub-pilot/keys/hub_worker', 'ubuntu')
 print('group_c added — no hub restart needed!')
 "
 ```
@@ -308,7 +308,7 @@ print('group_c added — no hub restart needed!')
 Start with dummy auth for initial setup:
 
 ```bash
-cd /opt/jupyterpilot
+cd /opt/jupyterhub-pilot
 python3 -m jupyterhub -f jupyterhub_config.py \
     --JupyterHub.authenticator_class=dummy \
     --DummyAuthenticator.password=setup123
@@ -330,8 +330,8 @@ Description=JupyterHub
 After=network.target
 
 [Service]
-WorkingDirectory=/opt/jupyterpilot
-ExecStart=/usr/bin/python3 -m jupyterhub -f /opt/jupyterpilot/jupyterhub_config.py
+WorkingDirectory=/opt/jupyterhub-pilot
+ExecStart=/usr/bin/python3 -m jupyterhub -f /opt/jupyterhub-pilot/jupyterhub_config.py
 Restart=always
 RestartSec=10
 
@@ -359,13 +359,13 @@ sudo pip3 install psutil websockets --break-system-packages
 ### Run as a systemd service on the worker
 
 ```bash
-sudo tee /etc/systemd/system/jupyterpilot-agent.service > /dev/null << 'INI'
+sudo tee /etc/systemd/system/jupyterhub_pilot-agent.service > /dev/null << 'INI'
 [Unit]
-Description=JupyterPilot Metrics Agent
+Description=JupyterHub-Pilot Metrics Agent
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /opt/jupyterpilot/jupyterpilot/metrics_agent.py --hub ws://HUB_PRIVATE_IP:8000/monitoring/ws --interval 2
+ExecStart=/usr/bin/python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py --hub ws://HUB_PRIVATE_IP:8000/monitoring/ws --interval 2
 Restart=always
 RestartSec=5
 
@@ -374,10 +374,10 @@ WantedBy=multi-user.target
 INI
 
 # Replace HUB_PRIVATE_IP with your actual Hub private IP:
-sudo sed -i 's/HUB_PRIVATE_IP/10.0.0.10/' /etc/systemd/system/jupyterpilot-agent.service
+sudo sed -i 's/HUB_PRIVATE_IP/10.0.0.10/' /etc/systemd/system/jupyterhub_pilot-agent.service
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now jupyterpilot-agent
+sudo systemctl enable --now jupyterhub_pilot-agent
 ```
 
 Visit `http://<HUB-PUBLIC-IP>:8000/monitoring` to see the live dashboard.
@@ -398,11 +398,11 @@ export VAULT_TOKEN=your-policy-scoped-token
 Set `"vault_enabled": true` in `hub_settings.json`, then store user secrets:
 
 ```bash
-vault kv put secret/jupyterpilot/alice \
+vault kv put secret/jupyterhub-pilot/alice \
     OPENAI_API_KEY="sk-alice-..." \
     DATABASE_URL="postgres://alice:pass@db.internal/mydb"
 
-vault kv put secret/jupyterpilot/bob \
+vault kv put secret/jupyterhub-pilot/bob \
     OPENAI_API_KEY="sk-bob-..."
 ```
 
@@ -419,9 +419,9 @@ Enable `%do`, `%fix`, `%review`, and `%rework` for every notebook user.
 ```bash
 # Run on the worker EC2:
 sudo mkdir -p /etc/ipython/profile_default/startup/
-sudo tee /etc/ipython/profile_default/startup/00-jupyterpilot.py > /dev/null << 'PYEOF'
+sudo tee /etc/ipython/profile_default/startup/00-jupyterhub_pilot.py > /dev/null << 'PYEOF'
 try:
-    get_ipython().run_line_magic("load_ext", "jupyterpilot.extension")
+    get_ipython().run_line_magic("load_ext", "jupyterhub_pilot.extension")
 except Exception:
     pass
 PYEOF
@@ -429,7 +429,7 @@ PYEOF
 
 ### Configure the LLM backend
 
-Each user creates `~/.jupyterpilot/config.json`. Example for cloud (OpenAI):
+Each user creates `~/.jupyterhub-pilot/config.json`. Example for cloud (OpenAI):
 
 ```json
 {
@@ -469,15 +469,15 @@ ollama pull qwen2.5-coder:7b
 ```bash
 # 1. SQLite DB is reachable and has team mappings
 python3 -c "
-from jupyterpilot.session_store import SessionStore
-s = SessionStore('/var/lib/jupyterhub/jupyterpilot_state.db')
+from jupyterhub_pilot.session_store import SessionStore
+s = SessionStore('/var/lib/jupyterhub/jupyterhub_pilot_state.db')
 print('DB ping:', s.ping())
 print('group_a:', s.get_mapping('group_a'))
 "
 # Expected: DB ping: True, group_a: {..., 'server_ip': '10.0.1.10'}
 
 # 2. SSH connection and port script work on each worker
-ssh -i /opt/jupyterpilot/keys/hub_worker -o StrictHostKeyChecking=no \
+ssh -i /opt/jupyterhub-pilot/keys/hub_worker -o StrictHostKeyChecking=no \
     ubuntu@10.0.1.10 "python3 ~/get_port.py"
 # Expected: a number between 8900-9900
 
@@ -505,7 +505,7 @@ loginctl show-user ubuntu | grep Linger
 
 1. Open `http://<HUB-PUBLIC-IP>:8000` and log in as `alice` (who is in `group_a`)
 2. Click **Start My Server** — it should spawn on `10.0.1.10`
-3. In a notebook cell: `%load_ext jupyterpilot.extension`
+3. In a notebook cell: `%load_ext jupyterhub_pilot.extension`
 4. Run: `%do print hello world`
 5. Verify code is injected into the next cell
 
@@ -531,7 +531,7 @@ paramiko.ssh_exception.NoValidConnectionsError
 
 1. Does the Worker EC2 security group allow **All Traffic from the Hub private IP**?
 2. Is the Hub public key in `/home/ubuntu/.ssh/authorized_keys` on the worker?
-3. Test manually: `ssh -i /opt/jupyterpilot/keys/hub_worker ubuntu@<worker-private-ip>`
+3. Test manually: `ssh -i /opt/jupyterhub-pilot/keys/hub_worker ubuntu@<worker-private-ip>`
 
 ---
 
@@ -555,7 +555,7 @@ JIT provisioning does this automatically for new users.
 RuntimeError: hub_api_url not found in hub_settings.json
 ```
 
-Check that `hub_settings.json` contains `"hub_api_url"` and that you started JupyterHub from the `/opt/jupyterpilot` directory.
+Check that `hub_settings.json` contains `"hub_api_url"` and that you started JupyterHub from the `/opt/jupyterhub-pilot` directory.
 
 ---
 
@@ -582,7 +582,7 @@ sudo chown <username>:<username> /home/<username>/get_port.py
 
 1. Is Ollama running? `systemctl status ollama`
 2. Is the model downloaded? `ollama list`
-3. Is the URL correct in `~/.jupyterpilot/config.json`?
+3. Is the URL correct in `~/.jupyterhub-pilot/config.json`?
 4. For cloud mode: is the API key valid?
 
 ---
@@ -592,7 +592,7 @@ sudo chown <username>:<username> /home/<username>/get_port.py
 Check the agent is running and pointing to the correct Hub WS URL:
 
 ```bash
-sudo systemctl status jupyterpilot-agent
+sudo systemctl status jupyterhub_pilot-agent
 # The --hub flag should be: ws://<HUB-PRIVATE-IP>:8000/monitoring/ws
 ```
 
