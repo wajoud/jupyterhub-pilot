@@ -30,6 +30,6 @@ pip install "jupyterhub-pilot[ai]"
 For full documentation, architecture diagrams, and guides, please visit our GitHub repository:
 
 - 🔗 **[Main Repository](https://github.com/wajoud/jupyterhub-pilot)**
-- 📊 **[Live Monitoring Dashboard Guide](https://github.com/wajoud/jupyterhub-pilot#-use-case-5--live-monitoring-dashboard)**
-- 🔑 **[Vault Secret Injection Guide](https://github.com/wajoud/jupyterhub-pilot#-use-case-4--vault-secret-injection)**
+- 📊 **[Live Monitoring Dashboard Guide](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/MONITORING.md)**
+- 🔑 **[Vault Secret Injection Guide](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/SECURITY.md#4-vault-secret-injection)**
 - ☁️ **[AWS EC2 Deployment Walkthrough](https://github.com/wajoud/jupyterhub-pilot/blob/main/AWS_EC2_DEPLOYMENT.md)**
