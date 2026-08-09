@@ -13,7 +13,7 @@ fi
 
 echo "📦 1. Installing OS dependencies..."
 apt update -y
-apt install -y python3-pip python3.12-venv net-tools psmisc
+apt install -y python3-pip python3-venv net-tools psmisc
 
 echo "📥 2. Cloning JupyterHub-Pilot repository..."
 if [ -d "/opt/jupyterhub-pilot" ]; then
