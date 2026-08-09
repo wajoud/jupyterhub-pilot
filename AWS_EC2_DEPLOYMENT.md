@@ -79,18 +79,13 @@ Then open `http://<HUB-PUBLIC-IP>:8000` and:
 
 ## 🔁 Adding More Users (Per-User Isolation)
 
-Each JupyterHub user must have a matching OS account on the Worker VM. Run on the **Worker VM**:
+You **do not** need to manually create OS accounts or run setup scripts for new users!
 
-```bash
-NEW_USER="alice"
+JupyterHub-Pilot includes **Just-In-Time (JIT) Provisioning**. 
+When a new user (like `alice`) logs in for the very first time, the Hub automatically SSHes into the assigned Worker EC2 and:
+1. Creates the `alice` OS account
+2. Enables systemd lingering (so her notebooks stay alive after SSH closes)
+3. Provisions her virtual environment and installs the AI magics
+4. Injects the Hub's SSH key so the Hub can manage her server
 
-sudo adduser --disabled-password --gecos "" $NEW_USER
-sudo loginctl enable-linger $NEW_USER
-sudo -u $NEW_USER mkdir -p /home/$NEW_USER/notebook
-sudo -u $NEW_USER pip3 install jupyterhub notebook --break-system-packages
-sudo cp /opt/jupyterhub-pilot/keys/worker.pub /tmp/hub_key.pub
-sudo mkdir -p /home/$NEW_USER/.ssh
-sudo cp /home/wajoud/.ssh/authorized_keys /home/$NEW_USER/.ssh/
-sudo chown -R $NEW_USER:$NEW_USER /home/$NEW_USER/.ssh
-sudo chmod 600 /home/$NEW_USER/.ssh/authorized_keys
-```
+All you need to do is add the user to the correct group in the JupyterHub Admin panel, and they can immediately start their server.
