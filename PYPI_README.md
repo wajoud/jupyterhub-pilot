@@ -8,20 +8,21 @@ JupyterHub-Pilot solves two major problems for data teams running JupyterHub:
 
 ## Installation
 
-You can install JupyterHub-Pilot and its specific components via pip:
+JupyterHub-Pilot is designed to run across multiple machines. You only need to install the components relevant to the machine you are setting up:
 
+**On the JupyterHub VM (The Hub):**
 ```bash
-# Install core package
-pip install jupyterhub-pilot
+pip install "jupyterhub-pilot[hub]"
+```
 
-# Install Hub-side dependencies
-pip install jupyterhub-pilot[hub]
+**On the Notebook Server VM (The Worker):**
+```bash
+pip install "jupyterhub-pilot[worker]"
+```
 
-# Install Worker-side dependencies
-pip install jupyterhub-pilot[worker]
-
-# Install AI features (for users)
-pip install jupyterhub-pilot[ai]
+**Inside a Jupyter Notebook (AI features for users):**
+```bash
+pip install "jupyterhub-pilot[ai]"
 ```
 
 ## Documentation & Full Setup Guide
