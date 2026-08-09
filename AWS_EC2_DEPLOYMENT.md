@@ -54,7 +54,7 @@ sudo bash jupyterhub-pilot/scripts/install_worker.sh
 ```
 
 When prompted:
-- Enter your **JupyterHub username** — must exactly match what you typed in the Hub setup (e.g. `wajoud`)
+- Enter the **OS admin username** (e.g. `ubuntu`) — this grants the Hub SSH access to provision the worker
 - Paste the **SSH public key** printed at the end of the Hub setup
 - Enter the **Hub's Private IP**
 

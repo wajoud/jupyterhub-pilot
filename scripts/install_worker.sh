@@ -92,6 +92,6 @@ systemctl restart jupyterhub_pilot-metrics
 echo ""
 echo "🎉 Worker Setup Complete!"
 echo "────────────────────────────────────"
-echo "Isolated user '$JUPYTER_USER' is ready on this Worker VM."
+echo "The worker is now fully configured for Just-In-Time (JIT) user provisioning."
 echo "The metrics agent is running in the background. Check logs with:"
 echo "sudo journalctl -u jupyterhub_pilot-metrics -f"
