@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jupyterhub-pilot"
-version = "0.2.2"
+version = "0.2.3"
 description = "Agentic AI coding partner for JupyterHub and IPython"
 readme = "PYPI_README.md"
 requires-python = ">=3.9"
@@ -44,6 +44,9 @@ dependencies = [
 Homepage = "https://github.com/wajoud/jupyterhub-pilot"
 Repository = "https://github.com/wajoud/jupyterhub-pilot.git"
 "Bug Tracker" = "https://github.com/wajoud/jupyterhub-pilot/issues"
+"AWS EC2 Deployment" = "https://github.com/wajoud/jupyterhub-pilot/blob/main/AWS_EC2_DEPLOYMENT.md"
+"Vault Integration" = "https://github.com/wajoud/jupyterhub-pilot#-use-case-4--vault-secret-injection"
+"Monitoring Dashboard" = "https://github.com/wajoud/jupyterhub-pilot#-use-case-5--live-monitoring-dashboard"
 
 [project.optional-dependencies]
 # Hub-side dependencies: pip install jupyterhub_pilot[hub]
