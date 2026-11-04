@@ -18,8 +18,8 @@ Since JupyterHub and its dependencies (`paramiko`, Google OAuthenticator, etc.) 
 
 ## 📁 Test Files
 
-### [`test_spawner.py`](file:///Users/wajoud/projects/Github/JupyterHub-Pilot/tests/test_spawner.py) — SSH Spawner Lifecycle
-Tests for the core `CustomSpawner` SSH spawner in [`spawner.py`](file:///Users/wajoud/projects/Github/JupyterHub-Pilot/spawner.py).
+### [`test_spawner.py`](test_spawner.py) — SSH Spawner Lifecycle
+Tests for the core `CustomSpawner` SSH spawner in [`spawner.py`](../spawner.py).
 
 | Test | What it validates |
 |---|---|
@@ -35,10 +35,10 @@ Tests for the core `CustomSpawner` SSH spawner in [`spawner.py`](file:///Users/w
 | `test_poll_stopped` | Returns `0` when the remote process is gone |
 | `test_poll_exception` | Returns `None` (state unknown) on SSH failure |
 
-### [`test_spawner_lifecycle.py`](file:///Users/wajoud/projects/Github/JupyterHub-Pilot/tests/test_spawner_lifecycle.py) — RBAC, SessionStore & Crash Recovery
+### [`test_spawner_lifecycle.py`](test_spawner_lifecycle.py) — RBAC, SessionStore & Crash Recovery
 Tests for the new infrastructure added in Task 1.
 
-**`TestRBACManager`** — 2-tier role enforcement ([`admin.py`](file:///Users/wajoud/projects/Github/JupyterHub-Pilot/jupyterhub_pilot/admin.py)):
+**`TestRBACManager`** — 2-tier role enforcement ([`admin.py`](../jupyterhub_pilot/admin.py)):
 
 | Test | What it validates |
 |---|---|
@@ -51,7 +51,7 @@ Tests for the new infrastructure added in Task 1.
 | `test_user_can_act_on_own_session` | No exception for self-action |
 | `test_user_blocked_on_other_session` | `PermissionError` for cross-user action by non-admin |
 
-**`TestSessionStore`** — SQLite state wrapper ([`session_store.py`](file:///Users/wajoud/projects/Github/JupyterHub-Pilot/jupyterhub_pilot/session_store.py)):
+**`TestSessionStore`** — SQLite state wrapper ([`session_store.py`](../jupyterhub_pilot/session_store.py)):
 
 | Test | What it validates |
 |---|---|
@@ -110,8 +110,8 @@ Tests for the new infrastructure added in Task 1.
 | `test_get_server_info_falls_back_to_json` | Uses JSON mapping when `ping()` returns `False` |
 | `test_get_server_info_raises_if_group_missing_everywhere` | `RuntimeError` if group missing in both sources |
 
-### [`test_config.py`](file:///Users/wajoud/projects/Github/JupyterHub-Pilot/tests/test_config.py) — Hub Config
-Tests for [`jupyterhub_config.py`](file:///Users/wajoud/projects/Github/JupyterHub-Pilot/jupyterhub_config.py):
+### [`test_config.py`](test_config.py) — Hub Config
+Tests for [`jupyterhub_config.py`](../jupyterhub_config.py):
 
 | Test | What it validates |
 |---|---|
@@ -122,13 +122,15 @@ Tests for [`jupyterhub_config.py`](file:///Users/wajoud/projects/Github/JupyterH
 ## 🚀 Running the Tests
 
 ```bash
-# All tests (54 total)
+# All tests (115 total)
 pytest -v tests/
 
 # Individual suites
-pytest -v tests/test_spawner.py           # SSH spawner lifecycle (11 tests)
-pytest -v tests/test_spawner_lifecycle.py  # RBAC + SessionStore + crash recovery (38 tests)
+pytest -v tests/test_spawner.py           # SSH spawner lifecycle (20 tests)
+pytest -v tests/test_spawner_lifecycle.py  # RBAC + SessionStore + crash recovery (39 tests)
 pytest -v tests/test_config.py            # Hub config (1 test)
+pytest -v tests/test_magics.py            # AI magic commands (34 tests)
+pytest -v tests/test_provider.py          # LLM providers (21 tests)
 ```
 
 > **Requirements**: `pytest` and `anyio` (included in `pip install -e .[dev]`). No running JupyterHub, SSH, or SQLite DB needed.
