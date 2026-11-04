@@ -126,9 +126,11 @@ def _db_available() -> bool:
 
 
 # Remote files live in the user's home, not shared /tmp, so other users on the
-# worker can neither read the log nor pre-create the PID file.
-_PID_FILE = "~/.jupyterhub-pilot.pid"
-_LOG_FILE = "~/.jupyterhub-pilot.log"
+# worker can neither read the log nor pre-create the PID file.  The Linux
+# user name is in the file name because a shared ``ssh_user`` login means
+# several JupyterHub users share one home directory.
+_PID_FILE = "~/.jupyterhub-pilot-{}.pid"
+_LOG_FILE = "~/.jupyterhub-pilot-{}.log"
 
 # Linux login names accepted by the default adduser NAME_REGEX.
 _OS_USER_RE = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
@@ -591,10 +593,15 @@ class CustomSpawner(Spawner):
             exports: str = "".join(
                 f"export {k}={shlex.quote(str(v))}\n" for k, v in env.items()
             )
+            pid_file = _PID_FILE.format(os_user)  # os_user is regex-validated
             script: str = (
                 f"{exports}"
-                f"{singleuser_cmd} < /dev/null &> {_LOG_FILE} &\n"
-                f"echo $! > {_PID_FILE}\n"
+                # JupyterHub forgets a server even when stop() failed, so end
+                # any server left over from an earlier start before launching.
+                f'OLD=$(cat {pid_file} 2>/dev/null) && '
+                f'ps -p "$OLD" -o args= | grep -q jupyterhub-singleuser && kill "$OLD"\n'
+                f"{singleuser_cmd} < /dev/null &> {_LOG_FILE.format(os_user)} &\n"
+                f"echo $! > {pid_file}\n"
                 f"disown\n"
             )
 
@@ -639,9 +646,9 @@ class CustomSpawner(Spawner):
         Termination sequence:
             SIGTERM → wait 5 seconds → SIGKILL (if process still alive)
 
-        The session row is removed only after the remote kill succeeded.
-        If SSH fails the error is raised, so JupyterHub keeps the server
-        recorded instead of leaving an untracked process on the worker.
+        If SSH fails the error is raised so the user and admin see that the
+        stop failed.  JupyterHub still forgets the server (it always calls
+        ``clear_state()``); the leftover process is ended on the next start.
 
         Args:
             now: Ignored (present for Spawner API compatibility).
@@ -666,15 +673,16 @@ class CustomSpawner(Spawner):
             return
 
         # SIGTERM → 5 s → SIGKILL
+        pid_file = _PID_FILE.format(self._os_username())
         cleanup_cmd: str = (
-            f"if [ -f {_PID_FILE} ]; then "
-            f"  PID=$(cat {_PID_FILE}); "
+            f"if [ -f {pid_file} ]; then "
+            f"  PID=$(cat {pid_file}); "
             f"  if ps -p $PID > /dev/null 2>&1; then "
             f"    kill -15 $PID; "
             f"    sleep 5; "
             f"    kill -9 $PID 2>/dev/null || true; "
             f"  fi; "
-            f"  rm -f {_PID_FILE}; "
+            f"  rm -f {pid_file}; "
             f"fi"
         )
 
@@ -721,7 +729,7 @@ class CustomSpawner(Spawner):
             status: str = await asyncio.to_thread(
                 self._run_remote,
                 server_info,
-                f"ps -p $(cat {_PID_FILE} 2>/dev/null) > /dev/null 2>&1 "
+                f"ps -p $(cat {_PID_FILE.format(self._os_username())} 2>/dev/null) > /dev/null 2>&1 "
                 f"&& echo 0 || echo 1",
             )
         except Exception as exc:  # noqa: BLE001

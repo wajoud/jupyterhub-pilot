@@ -250,7 +250,7 @@ async def test_stop(mock_spawner_instance):
         mock_ssh.exec_command.assert_called_once()
         cmd = mock_ssh.exec_command.call_args[0][0]
         assert "kill -15" in cmd
-        assert "~/.jupyterhub-pilot.pid" in cmd
+        assert "~/.jupyterhub-pilot-test_user.pid" in cmd  # per user: ssh_user may be shared
         mock_ssh.close.assert_called_once()
 
 
@@ -344,6 +344,8 @@ async def test_start_secrets_go_through_stdin_not_argv(mock_spawner_instance):
     script = stdin.write.call_args[0][0]
     assert "export JUPYTERHUB_API_TOKEN=s3cret" in script
     assert "/tmp/" not in script
+    assert "echo $! > ~/.jupyterhub-pilot-test_user.pid" in script
+    assert 'kill "$OLD"' in script  # leftover server from a failed stop is ended
 
 
 @pytest.mark.parametrize(
