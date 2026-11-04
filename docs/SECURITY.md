@@ -15,10 +15,9 @@ alice logs in for the first time
   ↓
 spawner calls _provision_user_jit()
   ↓ SSH as admin (ubuntu) to 10.0.1.10
-  ↓ sudo adduser --disabled-password alice
+  ↓ sudo adduser --allow-bad-names --disabled-password alice
   ↓ sudo loginctl enable-linger alice      ← keeps process alive after SSH closes
   ↓ sudo mkdir /home/alice/notebook
-  ↓ sudo pip3 install jupyterhub notebook jupyterhub_pilot[ai]
   ↓ copy Hub SSH key → /home/alice/.ssh/authorized_keys
   ↓
 spawner SSHes as alice, finds a free port, launches singleuser
@@ -65,10 +64,10 @@ If Alice's notebook eats 2.1GB of RAM, the kernel OOM-kills her process — **no
 
 | Role | What they can do | How to grant |
 |---|---|---|
-| `user` | Start/stop/poll **their own** server only | Default for all users |
-| `admin` | Start/stop/poll **any** user's server | JupyterHub Admin Panel → Users → ☑ Make Admin |
+| `user` | Start/stop/poll **their own** server only; see their own group's workers on the dashboard | Default for all users |
+| `admin` | Start/stop/poll **any** user's server; see every worker on the dashboard | JupyterHub Admin Panel → Users → ☑ Make Admin |
 
-No code changes, no restarts — promote a user to admin live via the JupyterHub UI. If a normal user attempts to start or stop another user's server via the API, a `PermissionError` is raised before any action is taken.
+No code changes, no restarts — promote a user to admin live via the JupyterHub UI. JupyterHub's own permission scopes enforce who may start or stop which server: a normal user's API request for another user's server is refused with `403 Forbidden`.
 
 ---
 

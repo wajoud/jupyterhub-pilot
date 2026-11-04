@@ -13,6 +13,7 @@ AgentWebSocketHandler  (``/monitoring/ws``)
 
 MonitoringPageHandler  (``/monitoring``) and BrowserWebSocketHandler
     Serve the dashboard and its live feed to logged-in JupyterHub users only.
+    Admins see every worker; other users only the workers of their groups.
 
 Authentication
 ──────────────
@@ -30,7 +31,8 @@ Usage (wire in jupyterhub_config.py)
 
     c.JupyterHub.extra_handlers = [
         (r"/monitoring/ws",      AgentWebSocketHandler),
-        (r"/monitoring/browser", BrowserWebSocketHandler),
+        (r"/monitoring/browser", BrowserWebSocketHandler,
+         {"worker_ip_for_group": worker_ip_for_group}),  # group name -> worker IP
         (r"/monitoring",         MonitoringPageHandler),
     ]
 
@@ -47,7 +49,7 @@ import hmac
 import json
 import logging
 import os
-from typing import Any, Dict, Set, Union
+from typing import Any, Callable, Dict, Optional, Set, Union
 
 from jupyterhub.handlers import BaseHandler
 from tornado import web
@@ -59,7 +61,8 @@ log = logging.getLogger("jupyterhub")
 # Shared in-process state
 # ---------------------------------------------------------------------------
 
-# Latest snapshot per Worker, keyed by hostname.
+# Latest snapshot per Worker, keyed by hostname.  snapshot["ip"] is the IP the
+# Hub sees for the agent's connection (used to filter what users can see).
 # { "ip-172-31-27-155": { ...metrics snapshot... } }
 _WORKER_SNAPSHOTS: Dict[str, Dict[str, Any]] = {}
 
@@ -99,6 +102,7 @@ class AgentWebSocketHandler(WebSocketHandler):
             raise web.HTTPError(403)
 
     def open(self, *args: str, **kwargs: str) -> None:
+        self.hostname: Optional[str] = None
         log.info(
             "MonitoringHandler: Worker agent connected from %s", self.request.remote_ip
         )
@@ -107,10 +111,17 @@ class AgentWebSocketHandler(WebSocketHandler):
         try:
             snapshot = json.loads(message)
         except (json.JSONDecodeError, TypeError):
+            snapshot = None
+        if not isinstance(snapshot, dict):
             log.warning("MonitoringHandler: received malformed JSON from agent.")
             return
 
-        hostname = snapshot.get("hostname", self.request.remote_ip)
+        # The agent's own "ip" can be 127.0.1.1; the connection's address is
+        # the worker's private IP, which is what the team mapping holds.
+        # (remote_ip honours the proxy's X-Forwarded-For: the Hub runs with xheaders.)
+        snapshot["ip"] = self.request.remote_ip
+        hostname = snapshot.get("hostname") or self.request.remote_ip
+        self.hostname = hostname
         _WORKER_SNAPSHOTS[hostname] = snapshot
 
         # PERF FIX: build the broadcast envelope *once* (not per client).
@@ -122,17 +133,27 @@ class AgentWebSocketHandler(WebSocketHandler):
             }
         )
 
-        # Broadcast; discard dead clients inline without a temporary set.
-        for client in list(_BROWSER_CLIENTS):
-            try:
-                client.write_message(envelope)
-            except Exception:  # noqa: BLE001
-                _BROWSER_CLIENTS.discard(client)
+        _broadcast(snapshot, envelope)
 
     def on_close(self) -> None:
         log.info(
             "MonitoringHandler: Worker agent disconnected (%s)", self.request.remote_ip
         )
+        # Drop the worker so the dashboard does not show stale numbers forever.
+        snapshot = _WORKER_SNAPSHOTS.pop(getattr(self, "hostname", None) or "", None)
+        if snapshot is not None:
+            _broadcast(snapshot, json.dumps({"type": "gone", "worker": self.hostname}))
+
+
+def _broadcast(snapshot: Dict[str, Any], envelope: str) -> None:
+    """Send *envelope* to every browser allowed to see *snapshot*'s worker."""
+    for client in list(_BROWSER_CLIENTS):
+        if not client.can_see(snapshot):
+            continue
+        try:
+            client.write_message(envelope)
+        except Exception:  # noqa: BLE001
+            _BROWSER_CLIENTS.discard(client)
 
 
 # ---------------------------------------------------------------------------
@@ -147,33 +168,47 @@ class BrowserWebSocketHandler(BaseHandler, WebSocketHandler):
     Tornado's default ``check_origin`` (same origin only) stays in place so
     another site cannot open this socket with the user's cookie.
 
+    Admins see every worker.  Other users see only the workers mapped to
+    their JupyterHub groups (``worker_ip_for_group``); if the lookup fails
+    they see nothing.
+
     On connection:
-      1. Registers the client in ``_BROWSER_CLIENTS``.
-      2. Immediately pushes all current snapshots as an "init" message.
+      1. Works out which worker IPs this user may see.
+      2. Registers the client in ``_BROWSER_CLIENTS``.
+      3. Immediately pushes the visible snapshots as an "init" message.
 
     On close: removes the client from the set.
     """
+
+    def initialize(
+        self,
+        worker_ip_for_group: Callable[[str], Optional[str]] = lambda group: None,
+    ) -> None:
+        self._worker_ip_for_group = worker_ip_for_group
+        self._allowed_ips: Optional[Set[str]] = set()  # None = all (admin)
+
+    def can_see(self, snapshot: Dict[str, Any]) -> bool:
+        return self._allowed_ips is None or snapshot.get("ip") in self._allowed_ips
 
     @web.authenticated
     async def get(self, *args: Any, **kwargs: Any) -> None:
         await WebSocketHandler.get(self, *args, **kwargs)
 
     def open(self, *args: str, **kwargs: str) -> None:
+        user = self.current_user
+        if user.admin:
+            self._allowed_ips = None
+        else:
+            ips = (self._worker_ip_for_group(g.name) for g in user.groups)
+            self._allowed_ips = {ip for ip in ips if ip}
         _BROWSER_CLIENTS.add(self)
         log.debug("MonitoringHandler: browser client connected.")
-        # Send current snapshots immediately so the page isn't blank on load
-        if _WORKER_SNAPSHOTS:
-            try:
-                self.write_message(
-                    json.dumps(
-                        {
-                            "type": "init",
-                            "workers": _WORKER_SNAPSHOTS,
-                        }
-                    )
-                )
-            except Exception:  # noqa: BLE001
-                pass
+        # Always send init (even empty) so the page can show "no workers".
+        visible = {h: s for h, s in _WORKER_SNAPSHOTS.items() if self.can_see(s)}
+        try:
+            self.write_message(json.dumps({"type": "init", "workers": visible}))
+        except Exception:  # noqa: BLE001
+            pass
 
     def on_message(self, message: Union[str, bytes]) -> None:
         # Browser sends no messages; ignore gracefully
@@ -199,7 +234,8 @@ class MonitoringPageHandler(BaseHandler):
     """
     Serves the monitoring dashboard HTML at ``GET /monitoring``.
 
-    Accessible to all logged-in JupyterHub users.
+    Accessible to all logged-in JupyterHub users; the live feed
+    (``BrowserWebSocketHandler``) decides which workers each user sees.
     """
 
     @web.authenticated

@@ -107,6 +107,12 @@ except Exception as _init_err:  # noqa: BLE001
 
 _rbac = RBACManager()
 
+
+def worker_ip_for_group(group: str) -> Optional[str]:
+    """Worker IP mapped to *group*, or None.  Used by the monitoring dashboard."""
+    row = _store.get_mapping(group)  # returns None on DB errors: fail closed
+    return row["server_ip"] if row else None
+
 # PERF FIX: cache the result of ping() so start/stop/poll don't hit SQLite
 # twice per operation.  The TTL of 5 s means a recovered DB is re-detected
 # quickly without hammering it on every spawner call.
@@ -132,8 +138,10 @@ def _db_available() -> bool:
 _PID_FILE = "~/.jupyterhub-pilot-{}.pid"
 _LOG_FILE = "~/.jupyterhub-pilot-{}.log"
 
-# Linux login names accepted by the default adduser NAME_REGEX.
-_OS_USER_RE = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
+# Linux login names.  Dots are allowed (Google strips the domain, so
+# "first.last@corp.com" logs in as "first.last"); adduser needs
+# --allow-bad-names for those.
+_OS_USER_RE = re.compile(r"[a-z_][a-z0-9_.-]{0,31}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -275,7 +283,7 @@ class CustomSpawner(Spawner):
         fi
 
         echo "Creating user {target_user}..."
-        sudo adduser --disabled-password --gecos "" {u}
+        sudo adduser --allow-bad-names --disabled-password --gecos "" {u}
         sudo loginctl enable-linger {u}
 
         sudo -u {u} mkdir -p {home}/notebook
@@ -285,7 +293,9 @@ class CustomSpawner(Spawner):
         sudo chown -R {u}:{u} {home}/.ssh
         sudo chmod 600 {home}/.ssh/authorized_keys
 
-        sudo -u {u} pip3 install jupyterhub notebook jupyterhub_pilot[ai]@git+https://github.com/wajoud/jupyterhub-pilot.git --break-system-packages
+        # jupyterhub, notebook and the AI magics are installed once per worker
+        # by install_worker.sh; installing them here took minutes and blew
+        # through JupyterHub's 60 s start_timeout.
 
         # Copy the get_port.py script so port allocation works
         sudo cp /opt/jupyterhub-pilot/get_port.py {home}/get_port.py
@@ -413,13 +423,12 @@ class CustomSpawner(Spawner):
         ``jupyterhub-singleuser`` on the remote host.
 
         Steps:
-            1. RBAC check — only the user themselves (or an admin) may spawn.
-            2. Resolve team → VM mapping (SQLite → JSON fallback).
-            3. Prepare cgroup limits and Vault secrets.
-            4. In a worker thread: provision the user, connect via SSH,
+            1. Resolve team → VM mapping (SQLite → JSON fallback).
+            2. Prepare cgroup limits and Vault secrets.
+            3. In a worker thread: provision the user, connect via SSH,
                acquire a port, write the OOM script, launch the server.
-            5. Persist session metadata to SQLite.
-            6. Return ``(ip, port)`` to the JupyterHub proxy.
+            4. Persist session metadata to SQLite.
+            5. Return ``(ip, port)`` to the JupyterHub proxy.
 
         Returns:
             Tuple of ``(ip_address, port)`` for the JupyterHub proxy.
@@ -430,10 +439,8 @@ class CustomSpawner(Spawner):
         """
         username: str = self.user.name
 
-        # 1. RBAC
-        _rbac.assert_can_act_on(self.user, username)
-
-        # 2. Resolve group and VM
+        # 1. Resolve group and VM.  JupyterHub's own scopes already stop users
+        # from starting someone else's server.
         user_groups = [g.name for g in self.user.groups]
         if not user_groups:
             raise RuntimeError(
@@ -448,7 +455,7 @@ class CustomSpawner(Spawner):
 
         role: str = _rbac.get_role(self.user)
 
-        # 3. Limits + secrets
+        # 2. Limits + secrets
         await self._prepare_spawn()
 
         hub_api_url: Optional[str] = hub_settings.get("hub_api_url")
@@ -457,12 +464,12 @@ class CustomSpawner(Spawner):
         env = self.get_env()
         env["JUPYTERHUB_API_URL"] = hub_api_url
 
-        # 4. All blocking SSH work off the event loop
+        # 3. All blocking SSH work off the event loop
         self.port = await asyncio.to_thread(
             self._launch_remote, server_info, os_user, env, role
         )
 
-        # 5. Persist session to SQLite
+        # 4. Persist session to SQLite
         start_time: str = datetime.now(timezone.utc).isoformat()
         self._session_meta = {
             "pid": None,  # PID is written by the remote shell
@@ -483,7 +490,7 @@ class CustomSpawner(Spawner):
         )
         self.log.info("CustomSpawner: session record written for '%s'", username)
 
-        # 6. Tell the JupyterHub proxy where to route traffic
+        # 5. Tell the JupyterHub proxy where to route traffic
         return (self.ip, self.port)
 
     def _launch_remote(
@@ -577,7 +584,7 @@ class CustomSpawner(Spawner):
                     props += f" --property=CPUQuota={shlex.quote(str(cpu))}"
                 singleuser_cmd = (
                     f"systemd-run --user --scope "
-                    f"--unit={unit_name}{props} "
+                    f"--unit={unit_name}.scope{props} "
                     f"-- {singleuser_cmd}"
                 )
                 self.log.info(

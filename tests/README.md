@@ -47,9 +47,6 @@ Tests for the new infrastructure added in Task 1.
 | `test_missing_admin_attr_defaults_false` | Safe on objects without `.admin` attribute |
 | `test_get_role_admin` | Returns `"admin"` for admins |
 | `test_get_role_user` | Returns `"user"` for regular users |
-| `test_admin_can_act_on_any_user` | No exception for admin cross-user action |
-| `test_user_can_act_on_own_session` | No exception for self-action |
-| `test_user_blocked_on_other_session` | `PermissionError` for cross-user action by non-admin |
 
 **`TestSessionStore`** — SQLite state wrapper ([`session_store.py`](../jupyterhub_pilot/session_store.py)):
 
@@ -122,15 +119,16 @@ Tests for [`jupyterhub_config.py`](../jupyterhub_config.py):
 ## 🚀 Running the Tests
 
 ```bash
-# All tests (115 total)
+# All tests (123 total)
 pytest -v tests/
 
 # Individual suites
-pytest -v tests/test_spawner.py           # SSH spawner lifecycle (20 tests)
-pytest -v tests/test_spawner_lifecycle.py  # RBAC + SessionStore + crash recovery (39 tests)
+pytest -v tests/test_spawner.py           # SSH spawner lifecycle (23 tests)
+pytest -v tests/test_spawner_lifecycle.py  # RBAC + SessionStore + crash recovery (36 tests)
 pytest -v tests/test_config.py            # Hub config (1 test)
 pytest -v tests/test_magics.py            # AI magic commands (34 tests)
 pytest -v tests/test_provider.py          # LLM providers (21 tests)
+pytest -v tests/test_monitoring.py        # Dashboard token + per-user filter (8 tests)
 ```
 
 > **Requirements**: `pytest` and `anyio` (included in `pip install -e .[dev]`). No running JupyterHub, SSH, or SQLite DB needed.

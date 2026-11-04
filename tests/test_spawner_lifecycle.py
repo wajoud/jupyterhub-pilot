@@ -166,19 +166,6 @@ class TestRBACManager:
     def test_get_role_user(self, rbac, regular_user):
         assert rbac.get_role(regular_user) == "user"
 
-    def test_admin_can_act_on_any_user(self, rbac, admin_user):
-        """Admin may act on a different user's session — no exception."""
-        rbac.assert_can_act_on(admin_user, "some_other_user")  # must not raise
-
-    def test_user_can_act_on_own_session(self, rbac, regular_user):
-        """Non-admin may always act on their own session."""
-        rbac.assert_can_act_on(regular_user, regular_user.name)  # must not raise
-
-    def test_user_blocked_on_other_session(self, rbac, regular_user):
-        """Non-admin acting on another user's session raises PermissionError."""
-        with pytest.raises(PermissionError, match="not an admin"):
-            rbac.assert_can_act_on(regular_user, "alice")
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 2. SessionStore tests

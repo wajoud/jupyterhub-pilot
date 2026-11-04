@@ -64,7 +64,7 @@ sudo systemctl enable --now jupyterhub_pilot-agent
 
 ## Viewing the Dashboard
 
-**Visit `http://<HUB-PUBLIC-IP>:8000/monitoring` to see the live dashboard.**
+**Visit `https://<your-hub-domain>/hub/monitoring` to see the live dashboard.**
 
 What you see per worker EC2:
 - **CPU:** Live CPU % (total + per-core) and 1/5/15-min load averages
@@ -74,6 +74,8 @@ What you see per worker EC2:
 
 ### Access control
 
-- All authenticated JupyterHub users can view the dashboard.
-- Regular users see **only** their own worker EC2's panel (the machine their group is assigned to).
+- All authenticated JupyterHub users can open the dashboard.
+- Regular users see **only** the workers their groups are mapped to (`server_ip` in the team mapping).
 - Admins see **all** connected workers across the entire cluster.
+- A worker is matched by the IP the Hub sees for its agent's connection, so `server_ip` must be the worker's **private** IP (the one the agent connects from).
+- When an agent disconnects, its worker disappears from the dashboard.

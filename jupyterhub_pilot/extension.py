@@ -26,7 +26,6 @@ from typing import List, Optional, Tuple
 from IPython.core.magic import Magics, line_magic, magics_class
 from IPython.core.magic_arguments import argument, magic_arguments, parse_argstring
 
-from .env_setup import ensure_ai_deps
 from .provider import LLMProvider
 
 _MAGIC_PREFIXES = ("%do", "%fix", "%review", "%rework")
@@ -165,23 +164,13 @@ def _get_last_traceback(shell) -> Optional[Tuple[str, str]]:
     """
     Return (last_cell_source, cleaned_traceback) or None if no error.
 
-    Checks IPython's internal store first (more reliable in JupyterLab),
-    then falls back to sys.last_traceback.
+    IPython sets ``sys.last_*`` whenever a cell raises.  (ipykernel's
+    ``shell._last_traceback`` is no use here: it is reset when ``%fix`` runs.)
     """
-    # IPython >= 7 stores the last exception on the shell object
-    last_exc = getattr(shell, "_last_traceback", None)
-    if last_exc is None and hasattr(sys, "last_traceback"):
-        etype = sys.last_type
-        evalue = sys.last_value
-        tb = sys.last_traceback
-        if tb is not None:
-            raw = "".join(traceback.format_exception(etype, evalue, tb))
-            last_exc = raw
-
-    if last_exc is None:
+    tb = getattr(sys, "last_traceback", None)
+    if tb is None:
         return None
-
-    raw_tb = last_exc if isinstance(last_exc, str) else str(last_exc)
+    raw_tb = "".join(traceback.format_exception(sys.last_type, sys.last_value, tb))
     cleaned = _clean_traceback(raw_tb)
 
     # history[-1] is the %fix cell itself; take the last real code cell.
@@ -367,8 +356,6 @@ class JupyterHubPilotMagics(Magics):
 
 def load_ipython_extension(ipython) -> None:
     """Register JupyterHub-Pilot magics with the running IPython kernel."""
-    # Ensure AI packages are available before registering magics
-    ensure_ai_deps()
     ipython.register_magics(JupyterHubPilotMagics(ipython))
     print(
         "✅ JupyterHub-Pilot loaded. Available: %do, %fix, %review, %rework\n"

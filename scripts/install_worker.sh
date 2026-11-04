@@ -52,8 +52,12 @@ echo "$HUB_PUB_KEY" >> /home/$ADMIN_USER/.ssh/authorized_keys
 chown -R $ADMIN_USER:$ADMIN_USER /home/$ADMIN_USER/.ssh
 chmod 600 /home/$ADMIN_USER/.ssh/authorized_keys
 
-echo "🛡️ 5. Installing global dependencies for Metrics Agent..."
-pip3 install psutil websockets --break-system-packages # Install globally for the metrics agent
+echo "🛡️ 5. Installing Jupyter, the AI magics and the Metrics Agent dependencies..."
+# Installed once for every user on this worker (into /usr/local), so creating a
+# new user on first login takes seconds instead of a multi-minute pip install.
+# --ignore-installed: Ubuntu 26 ships some packages via apt without RECORD files.
+pip3 install jupyterhub notebook "/opt/jupyterhub-pilot[ai]" psutil websockets \
+    --break-system-packages --ignore-installed
 
 echo "🔌 6. Setting up Port Allocation script for JIT provisioner..."
 cat > /opt/jupyterhub-pilot/get_port.py << 'EOF'

@@ -46,7 +46,8 @@ else
     git clone https://github.com/wajoud/jupyterhub-pilot.git /opt/jupyterhub-pilot
     chown -R $SUDO_USER:$SUDO_USER /opt/jupyterhub-pilot
 fi
-pip3 install -e /opt/jupyterhub-pilot --break-system-packages
+# [hub] pulls in paramiko, which the spawner needs for SSH.
+pip3 install -e "/opt/jupyterhub-pilot[hub]" --break-system-packages
 
 echo "🗄️ 3. Setting up Database..."
 mkdir -p /var/lib/jupyterhub

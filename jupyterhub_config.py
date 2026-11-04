@@ -3,9 +3,7 @@
 # ===============================
 
 import json
-import logging
 import os
-import shutil
 import sys
 
 from oauthenticator.google import GoogleOAuthenticator
@@ -22,7 +20,7 @@ from jupyterhub_pilot.monitoring_handler import (
     BrowserWebSocketHandler,
     MonitoringPageHandler,
 )
-from spawner import CustomSpawner
+from spawner import CustomSpawner, worker_ip_for_group
 
 # -------------------------------------------------
 # Base Config
@@ -39,66 +37,10 @@ c.JupyterHub.hub_connect_ip = hub_settings["hub_ip"]
 c.JupyterHub.port = hub_settings["hub_port"]
 c.JupyterHub.hub_bind_url = hub_settings["hub_bind_url"]
 
-# ── Custom nav: inject Monitoring link into JupyterHub's page.html ──────────────────
-# Strategy: copy the real system page.html into our templates dir and
-# inject a small JS snippet that appends the nav link after page load.
-# Copying (not extending) avoids Jinja2's infinite recursion bug.
-try:
-    import jupyterhub as _jh
-
-    _jh_templates = os.path.join(os.path.dirname(_jh.__file__), "templates")
-    _custom_templates = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "templates"
-    )
-    _src = os.path.join(_jh_templates, "page.html")
-    _dst = os.path.join(_custom_templates, "page.html")
-
-    os.makedirs(_custom_templates, exist_ok=True)
-    shutil.copy2(_src, _dst)  # always sync with installed JupyterHub version
-
-    _monitoring_js = (
-        "\n<!-- JupyterHub-Pilot: Monitoring nav link -->\n"
-        "<script>\n"
-        "document.addEventListener('DOMContentLoaded', function () {\n"
-        "  var nav = document.querySelector('ul.navbar-nav');\n"
-        "  if (nav && !document.getElementById('jp-monitoring-link')) {\n"
-        "    var li = document.createElement('li');\n"
-        "    li.className = 'nav-item';\n"
-        "    var a  = document.createElement('a');\n"
-        "    a.id        = 'jp-monitoring-link';\n"
-        "    a.className = 'nav-link';\n"
-        "    a.href      = '/monitoring';\n"
-        "    a.title     = 'Live VM Monitoring';\n"
-        "    a.textContent = '\U0001f4ca Monitoring';\n"
-        "    li.appendChild(a);\n"
-        "    nav.appendChild(li);\n"
-        "  }\n"
-        "});\n"
-        "</script>\n"
-    )
-
-    with open(_dst) as _f:
-        _page_content = _f.read()
-
-    if "jp-monitoring-link" not in _page_content:
-        # Inject before </body> — works regardless of which Jinja blocks are used
-        if "</body>" in _page_content:
-            _page_content = _page_content.replace(
-                "</body>", _monitoring_js + "</body>", 1
-            )
-        else:
-            _page_content += _monitoring_js
-        with open(_dst, "w") as _f:
-            _f.write(_page_content)
-
-    c.JupyterHub.template_paths = [_custom_templates]
-    logging.getLogger("jupyterhub").info(
-        "JupyterHub-Pilot: Monitoring nav link injected into %s", _dst
-    )
-except Exception as _exc:
-    logging.getLogger("jupyterhub").warning(
-        "JupyterHub-Pilot: Could not inject Monitoring nav link: %s", _exc
-    )
+# Monitoring link in the nav bar: templates/page.html extends JupyterHub's own page.
+c.JupyterHub.template_paths = [
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
+]
 
 c.ConfigurableHTTPProxy.api_url = hub_settings["proxy_api_url"]
 
@@ -147,7 +89,8 @@ c.JupyterHub.extra_handlers = [
     # Task 4: Monitoring — Agent WebSocket (Worker VMs connect here)
     (r"/monitoring/ws", AgentWebSocketHandler),
     # Task 4: Monitoring — Browser WebSocket (Dashboard live updates)
-    (r"/monitoring/browser", BrowserWebSocketHandler),
+    # (each user only sees the workers of their own groups; admins see all)
+    (r"/monitoring/browser", BrowserWebSocketHandler, {"worker_ip_for_group": worker_ip_for_group}),
     # Task 4: Monitoring — Dashboard page (all authenticated users)
     (r"/monitoring", MonitoringPageHandler),
 ]

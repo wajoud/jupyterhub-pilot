@@ -350,7 +350,8 @@ async def test_start_secrets_go_through_stdin_not_argv(mock_spawner_instance):
 
 @pytest.mark.parametrize(
     "name, expected",
-    [("alice@corp.com", "alice"), ("Bob", "bob"), ("a_b-1", "a_b-1")],
+    [("alice@corp.com", "alice"), ("Bob", "bob"), ("a_b-1", "a_b-1"),
+     ("alice.smith", "alice.smith")],  # Google strips the domain: dots are common
 )
 def test_os_username_maps_email_local_part(name, expected):
     inst = CustomSpawner()
@@ -364,3 +365,35 @@ def test_os_username_rejects_shell_unsafe_names(name):
     inst.user.name = name
     with pytest.raises(RuntimeError, match="cannot be mapped"):
         inst._os_username()
+
+
+JIT_SERVER = {"admin_ssh_user": "ubuntu", "server_ip": "10.0.0.1", "server_ssh_key": "/k"}
+
+
+def _jit_ssh():
+    ssh = MagicMock()
+    stdout = MagicMock()
+    stdout.channel.recv_exit_status.return_value = 0
+    ssh.exec_command.return_value = (None, stdout, MagicMock())
+    return ssh
+
+
+def test_jit_provisioning_script_creates_dotted_user_without_pip():
+    inst = CustomSpawner()
+    inst.user.name = "alice.smith"
+    ssh = _jit_ssh()
+    with patch.object(spawner.paramiko, "SSHClient", return_value=ssh):
+        inst._provision_user_jit(JIT_SERVER)
+    script = ssh.exec_command.call_args.args[0]
+    assert 'adduser --allow-bad-names --disabled-password --gecos "" alice.smith' in script
+    assert "pip3 install" not in script  # packages are installed once per worker
+    ssh.close.assert_called_once()
+
+
+def test_jit_provisioning_never_sends_unsafe_name():
+    inst = CustomSpawner()
+    inst.user.name = 'x";sudo rm -rf /;"'
+    ssh = _jit_ssh()
+    with patch.object(spawner.paramiko, "SSHClient", return_value=ssh), pytest.raises(RuntimeError):
+        inst._provision_user_jit(JIT_SERVER)
+    ssh.exec_command.assert_not_called()

@@ -305,18 +305,21 @@ print('group_c added — no hub restart needed!')
 
 ### 5a. Assign users to groups
 
+Google login needs HTTPS on a real domain name: Google rejects `http://` and bare-IP callbacks, and the Hub's `Secure` login cookie is dropped by browsers over plain HTTP. Put the Hub behind HTTPS first — see [HTTPS with Caddy](AWS_EC2_DEPLOYMENT.md#-4-https-with-caddy) — and keep port 8000 closed to the internet.
+
 Start the Hub with Google login:
 
 ```bash
 cd /opt/jupyterhub-pilot
-export CLIENT_ID=... CLIENT_SECRET=... OAUTH_CALLBACK_URL=...
+export CLIENT_ID=... CLIENT_SECRET=...
+export OAUTH_CALLBACK_URL=https://hub.example.com/hub/oauth_callback
 export JUPYTERPILOT_AGENT_TOKEN=$(cat /etc/jupyterhub-pilot/agent_token)
 python3 -m jupyterhub -f jupyterhub_config.py
 ```
 
 > ⚠️ Never start the Hub with `DummyAuthenticator` on a reachable network: anyone could log in as any user, including the admin.
 
-Open `http://<HUB-PUBLIC-IP>:8000` and:
+Open `https://hub.example.com` and:
 
 1. Log in with your Google admin account
 2. Go to **Admin** → **Groups** → **Add Group**: `group_a`
@@ -384,7 +387,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now jupyterhub_pilot-agent
 ```
 
-Visit `http://<HUB-PUBLIC-IP>:8000/monitoring` to see the live dashboard.
+Visit `https://hub.example.com/hub/monitoring` to see the live dashboard.
 
 ---
 
@@ -507,7 +510,7 @@ loginctl show-user ubuntu | grep Linger
 
 ### End-to-end
 
-1. Open `http://<HUB-PUBLIC-IP>:8000` and log in as `alice` (who is in `group_a`)
+1. Open `https://hub.example.com` and log in as `alice` (who is in `group_a`)
 2. Click **Start My Server** — it should spawn on `10.0.1.10`
 3. In a notebook cell: `%load_ext jupyterhub_pilot.extension`
 4. Run: `%do print hello world`
