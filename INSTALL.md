@@ -305,18 +305,20 @@ print('group_c added — no hub restart needed!')
 
 ### 5a. Assign users to groups
 
-Start with dummy auth for initial setup:
+Start the Hub with Google login:
 
 ```bash
 cd /opt/jupyterhub-pilot
-python3 -m jupyterhub -f jupyterhub_config.py \
-    --JupyterHub.authenticator_class=dummy \
-    --DummyAuthenticator.password=setup123
+export CLIENT_ID=... CLIENT_SECRET=... OAUTH_CALLBACK_URL=...
+export JUPYTERPILOT_AGENT_TOKEN=$(cat /etc/jupyterhub-pilot/agent_token)
+python3 -m jupyterhub -f jupyterhub_config.py
 ```
+
+> ⚠️ Never start the Hub with `DummyAuthenticator` on a reachable network: anyone could log in as any user, including the admin.
 
 Open `http://<HUB-PUBLIC-IP>:8000` and:
 
-1. Log in with your admin username and `setup123`
+1. Log in with your Google admin account
 2. Go to **Admin** → **Groups** → **Add Group**: `group_a`
 3. Click `group_a` → **Add Users**: `alice`, `bob`, `charlie`, ...
 4. Repeat for each group
@@ -365,6 +367,8 @@ Description=JupyterHub-Pilot Metrics Agent
 After=network.target
 
 [Service]
+# Contains JUPYTERPILOT_AGENT_TOKEN=<same value as the Hub>; chmod 600
+EnvironmentFile=/etc/jupyterhub-pilot/agent.env
 ExecStart=/usr/bin/python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py --hub ws://HUB_PRIVATE_IP:8000/monitoring/ws --interval 2
 Restart=always
 RestartSec=5

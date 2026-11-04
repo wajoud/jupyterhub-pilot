@@ -19,6 +19,9 @@ Architecture
      remote process with SIGTERM → 5 s wait → SIGKILL.
   7. ``clear_state()`` removes the SQLite session row and resets instance vars.
 
+  All SSH work runs in a worker thread (``asyncio.to_thread``) so a slow VM
+  never blocks the Hub's event loop.
+
 RBAC
 ────
   2-tier model:
@@ -29,10 +32,9 @@ RBAC
   to ``admin_users`` in ``hub_settings.json`` and restart the hub.  No code or
   DB changes required.
 
-Lifecycle Hooks
-───────────────
-  ``pre_spawn_hook``  — stub for Task 2 (cgroups v2) and Task 3 (Vault secrets)
-  ``post_stop_hook``  — stub for Task 4 (resource locks + telemetry flush)
+Spawn preparation
+─────────────────
+  ``_prepare_spawn`` — cgroups v2 limits (Task 2) and Vault secrets (Task 3).
 """
 
 from __future__ import annotations
@@ -40,7 +42,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import shlex
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
@@ -106,7 +110,6 @@ _rbac = RBACManager()
 # PERF FIX: cache the result of ping() so start/stop/poll don't hit SQLite
 # twice per operation.  The TTL of 5 s means a recovered DB is re-detected
 # quickly without hammering it on every spawner call.
-import time as _time  # noqa: E402  (already imported above via asyncio)
 _PING_CACHE: Optional[bool] = None
 _PING_CACHE_AT: float = 0.0
 _PING_TTL: float = 5.0  # seconds
@@ -115,11 +118,20 @@ _PING_TTL: float = 5.0  # seconds
 def _db_available() -> bool:
     """Return cached _store.ping() result; re-checks at most every _PING_TTL seconds."""
     global _PING_CACHE, _PING_CACHE_AT
-    now = _time.monotonic()
+    now = time.monotonic()
     if _PING_CACHE is None or (now - _PING_CACHE_AT) > _PING_TTL:
         _PING_CACHE = _store.ping()
         _PING_CACHE_AT = now
     return _PING_CACHE
+
+
+# Remote files live in the user's home, not shared /tmp, so other users on the
+# worker can neither read the log nor pre-create the PID file.
+_PID_FILE = "~/.jupyterhub-pilot.pid"
+_LOG_FILE = "~/.jupyterhub-pilot.log"
+
+# Linux login names accepted by the default adduser NAME_REGEX.
+_OS_USER_RE = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -132,13 +144,10 @@ class CustomSpawner(Spawner):
     SSH-based JupyterHub spawner with SQLite session state and 2-tier RBAC.
 
     Attributes:
-        _pid_file (Optional[str]): Remote path to the PID file for the
-            singleuser server process.
         _session_meta (Dict[str, Any]): In-memory copy of the last-written
             session record (pid, vm_ip, port, start_time, role, group_name).
     """
 
-    _pid_file: Optional[str] = None
     _session_meta: Dict[str, Any] = {}  # noqa: RUF012
 
     # ── Internal helpers ──────────────────────────────────────────────────────
@@ -167,21 +176,6 @@ class CustomSpawner(Spawner):
                 f"Cannot load mapping from SQLite or JSON fallback: {exc}"
             ) from exc
 
-    def _load_mapping(self) -> Dict[str, Any]:
-        """
-        Load the team→VM mapping.
-
-        Tries SQLite first; falls back to user_mapping.json if the DB is
-        unreachable.
-
-        Returns:
-            Dict mapping team names to server info dicts.
-        """
-        # PERF FIX: use cached ping result — no extra DB call here.
-        if _db_available():
-            return {}  # callers that need a single team use _get_server_info
-        return self._load_mapping_fallback()
-
     def _get_server_info(self, group: str) -> Dict[str, Any]:
         """
         Return the server info dict for *group*, trying SQLite first then
@@ -194,8 +188,6 @@ class CustomSpawner(Spawner):
         Raises:
             RuntimeError: If the group is not found in either source.
         """
-        # PERF FIX: reuse the cached ping result — avoids a second DB round-trip
-        # on the same request path that _load_mapping() already checked.
         if _db_available():
             row = _store.get_mapping(group)
             if row is not None:
@@ -204,6 +196,7 @@ class CustomSpawner(Spawner):
                     "server_ip": row["server_ip"],
                     "server_ssh_key": row["ssh_key"],
                     "ssh_user": row.get("ssh_user"),
+                    "admin_ssh_user": row.get("admin_ssh_user"),
                 }
             self.log.warning(
                 "CustomSpawner: group '%s' not found in SQLite; "
@@ -219,14 +212,30 @@ class CustomSpawner(Spawner):
             )
         return fallback[group]
 
+    def _os_username(self) -> str:
+        """
+        Return the Linux login name for this JupyterHub user.
+
+        Google OAuth usernames are emails; the worker account is the part
+        before ``@``.  Anything that is not a plain Linux name is rejected
+        here, before it can reach a remote shell.
+        """
+        name = self.user.name.split("@", 1)[0].lower()
+        if not _OS_USER_RE.fullmatch(name):  # fullmatch: "$" would allow a trailing "\n"
+            raise RuntimeError(
+                f"Username '{self.user.name}' cannot be mapped to a Linux "
+                "account name (allowed: a-z, 0-9, '_', '-', max 32 chars)."
+            )
+        return name
+
     def _get_ssh_username(self, server_info: Dict[str, Any]) -> str:
         """
         Return the SSH login username.
 
         Uses the optional ``ssh_user`` field from the mapping; falls back to
-        the JupyterHub username so the spawner SSHs as the individual user.
+        the user's Linux account name so the spawner SSHs as the individual user.
         """
-        return server_info.get("ssh_user") or self.user.name
+        return server_info.get("ssh_user") or self._os_username()
 
     def _provision_user_jit(self, server_info: Dict[str, Any]) -> None:
         """
@@ -238,7 +247,7 @@ class CustomSpawner(Spawner):
         if not admin_user:
             return  # Legacy mode, no admin user configured for provisioning
 
-        target_user = self.user.name
+        target_user = self._os_username()
 
         # Open SSH connection as admin user
         ssh = paramiko.SSHClient()
@@ -255,39 +264,42 @@ class CustomSpawner(Spawner):
             self.log.warning(f"JIT Provisioner failed to connect as {admin_user}: {e}")
             return
 
-        # Provisioning script
+        u = shlex.quote(target_user)
+        home = shlex.quote(f"/home/{target_user}")
+        admin_keys = shlex.quote(f"/home/{admin_user}/.ssh/authorized_keys")
         script = f"""
-        if id "{target_user}" &>/dev/null; then
+        if id {u} &>/dev/null; then
             exit 0
         fi
 
         echo "Creating user {target_user}..."
-        sudo adduser --disabled-password --gecos "" "{target_user}"
-        sudo loginctl enable-linger "{target_user}"
+        sudo adduser --disabled-password --gecos "" {u}
+        sudo loginctl enable-linger {u}
 
-        sudo -u "{target_user}" mkdir -p "/home/{target_user}/notebook"
-        sudo -u "{target_user}" mkdir -p "/home/{target_user}/.ssh"
+        sudo -u {u} mkdir -p {home}/notebook
+        sudo -u {u} mkdir -p {home}/.ssh
 
-        sudo cp "/home/{admin_user}/.ssh/authorized_keys" "/home/{target_user}/.ssh/authorized_keys"
-        sudo chown -R "{target_user}:{target_user}" "/home/{target_user}/.ssh"
-        sudo chmod 600 "/home/{target_user}/.ssh/authorized_keys"
+        sudo cp {admin_keys} {home}/.ssh/authorized_keys
+        sudo chown -R {u}:{u} {home}/.ssh
+        sudo chmod 600 {home}/.ssh/authorized_keys
 
-        sudo -u "{target_user}" pip3 install jupyterhub notebook jupyterhub_pilot[ai]@git+https://github.com/wajoud/jupyterhub-pilot.git --break-system-packages
+        sudo -u {u} pip3 install jupyterhub notebook jupyterhub_pilot[ai]@git+https://github.com/wajoud/jupyterhub-pilot.git --break-system-packages
 
         # Copy the get_port.py script so port allocation works
-        sudo cp /opt/jupyterhub-pilot/get_port.py "/home/{target_user}/get_port.py"
-        sudo chown "{target_user}:{target_user}" "/home/{target_user}/get_port.py"
+        sudo cp /opt/jupyterhub-pilot/get_port.py {home}/get_port.py
+        sudo chown {u}:{u} {home}/get_port.py
         """
 
-        stdin, stdout, stderr = ssh.exec_command(script)
-        exit_status = stdout.channel.recv_exit_status()
-        if exit_status != 0:
-            err = stderr.read().decode()
-            self.log.error(f"JIT Provisioning script failed with status {exit_status}:\\n{err}")
-        else:
-            self.log.info(f"JIT Provisioning succeeded for user {target_user}.")
-
-        ssh.close()
+        try:
+            _, stdout, stderr = ssh.exec_command(script)
+            exit_status = stdout.channel.recv_exit_status()
+            if exit_status != 0:
+                err = stderr.read().decode()
+                self.log.error(f"JIT Provisioning script failed with status {exit_status}:\n{err}")
+            else:
+                self.log.info(f"JIT Provisioning succeeded for user {target_user}.")
+        finally:
+            ssh.close()
 
     def _open_ssh(self, server_info: Dict[str, Any]) -> paramiko.SSHClient:
         """
@@ -318,29 +330,14 @@ class CustomSpawner(Spawner):
         )
         return ssh
 
-    # Kept for backward-compatibility with existing unit tests
-    def get_remote_ssh(
-        self, server_info: Dict[str, Any], ssh_user: str
-    ) -> paramiko.SSHClient:
-        """Open SSH connection using *ssh_user* as the login name."""
-        ssh = paramiko.SSHClient()
-        ssh.load_system_host_keys()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(
-            server_info["server_ip"],
-            username=ssh_user,
-            key_filename=server_info["server_ssh_key"],
-            timeout=10,
-            banner_timeout=15,
-            auth_timeout=15,
-        )
-        return ssh
+    # ── Spawn preparation ─────────────────────────────────────────────────────
 
-    # ── Lifecycle hooks ───────────────────────────────────────────────────────
-
-    async def pre_spawn_hook(self, spawner: Optional[Spawner] = None) -> None:
+    async def _prepare_spawn(self) -> None:
         """
-        Pre-spawn lifecycle hook.
+        Prepare limits and secrets before launch.
+
+        Not named ``pre_spawn_hook``: that is a JupyterHub config trait which
+        JupyterHub already calls itself, so overriding it ran this twice.
 
         Performs two actions in order:
 
@@ -406,16 +403,6 @@ class CustomSpawner(Spawner):
                 username,
             )
 
-    async def post_stop_hook(self, spawner: Optional[Spawner] = None) -> None:
-        """
-        Post-stop lifecycle hook — no-op stub for future tasks.
-
-        Task 4 integration point: resource lock release and telemetry flush.
-        """
-        self.log.debug(
-            "CustomSpawner: post_stop_hook (stub) for user '%s'", self.user.name
-        )
-
     # ── Core Spawner API ──────────────────────────────────────────────────────
 
     async def start(self) -> Tuple[str, int]:
@@ -426,13 +413,11 @@ class CustomSpawner(Spawner):
         Steps:
             1. RBAC check — only the user themselves (or an admin) may spawn.
             2. Resolve team → VM mapping (SQLite → JSON fallback).
-            3. Run ``pre_spawn_hook`` stub.
-            4. Connect via SSH.
-            5. Acquire a free port; kill stale occupants if necessary.
-            6. Write the OOM enforcement IPython startup script.
-            7. Launch ``jupyterhub-singleuser`` in the background.
-            8. Persist session metadata to SQLite.
-            9. Return ``(ip, port)`` to the JupyterHub proxy.
+            3. Prepare cgroup limits and Vault secrets.
+            4. In a worker thread: provision the user, connect via SSH,
+               acquire a port, write the OOM script, launch the server.
+            5. Persist session metadata to SQLite.
+            6. Return ``(ip, port)`` to the JupyterHub proxy.
 
         Returns:
             Tuple of ``(ip_address, port)`` for the JupyterHub proxy.
@@ -457,18 +442,59 @@ class CustomSpawner(Spawner):
         group: str = user_groups[0]
         server_info: Dict[str, Any] = self._get_server_info(group)
         self.ip = server_info["server_ip"]
-        self._pid_file = f"/tmp/jupyterhub-{username}.pid"
+        os_user: str = self._os_username()
 
         role: str = _rbac.get_role(self.user)
 
-        # 3. Pre-spawn hook
-        await self.pre_spawn_hook()
+        # 3. Limits + secrets
+        await self._prepare_spawn()
 
+        hub_api_url: Optional[str] = hub_settings.get("hub_api_url")
+        if not hub_api_url:
+            raise RuntimeError("hub_api_url not found in hub_settings.json")
+        env = self.get_env()
+        env["JUPYTERHUB_API_URL"] = hub_api_url
+
+        # 4. All blocking SSH work off the event loop
+        self.port = await asyncio.to_thread(
+            self._launch_remote, server_info, os_user, env, role
+        )
+
+        # 5. Persist session to SQLite
+        start_time: str = datetime.now(timezone.utc).isoformat()
+        self._session_meta = {
+            "pid": None,  # PID is written by the remote shell
+            "vm_ip": self.ip,
+            "port": self.port,
+            "start_time": start_time,
+            "role": role,
+            "group_name": group,
+        }
+        _store.set_session(
+            username,
+            vm_ip=self.ip,
+            port=self.port,
+            start_time=start_time,
+            role=role,
+            status="running",
+            group_name=group,
+        )
+        self.log.info("CustomSpawner: session record written for '%s'", username)
+
+        # 6. Tell the JupyterHub proxy where to route traffic
+        return (self.ip, self.port)
+
+    def _launch_remote(
+        self,
+        server_info: Dict[str, Any],
+        os_user: str,
+        env: Dict[str, Any],
+        role: str,
+    ) -> int:
+        """Blocking part of ``start()``; runs in a worker thread. Returns the port."""
+        username: str = self.user.name
         try:
-            # 4. Provision User JIT
             self._provision_user_jit(server_info)
-
-            # 5. SSH connect as the target user
             ssh: paramiko.SSHClient = self._open_ssh(server_info)
         except Exception as exc:
             cls = type(exc).__name__
@@ -496,26 +522,25 @@ class CustomSpawner(Spawner):
             raise
 
         try:
-            # 5a. Acquire port
+            # Acquire port
             _, stdout, _ = ssh.exec_command("python3 ~/get_port.py")
-            self.port = int(stdout.readline().strip())
+            port = int(stdout.readline().strip())
 
-            # 5b. Check for stale process on that port
-            check_cmd = f"netstat -tuln | grep ':{self.port} ' || true"
-            _, stdout, _ = ssh.exec_command(check_cmd)
+            # Check for stale process on that port
+            _, stdout, _ = ssh.exec_command(f"netstat -tuln | grep ':{port} ' || true")
             if stdout.read().strip():
                 self.log.warning(
                     "CustomSpawner: port %d on %s already in use for '%s'. "
                     "Attempting to clear stale process...",
-                    self.port,
+                    port,
                     self.ip,
                     username,
                 )
-                _, fuser_out, _ = ssh.exec_command(f"fuser -k {self.port}/tcp || true")
+                _, fuser_out, _ = ssh.exec_command(f"fuser -k {port}/tcp || true")
                 fuser_out.channel.recv_exit_status()  # wait for completion
-                await asyncio.sleep(1)
+                time.sleep(1)
 
-            # 6. OOM enforcement startup script
+            # OOM enforcement startup script
             setup_oom_cmd = (
                 "mkdir -p ~/.ipython/profile_default/startup/ && "
                 'echo "import os\n'
@@ -530,27 +555,11 @@ class CustomSpawner(Spawner):
             if oom_stdout.channel.recv_exit_status() != 0:
                 self.log.warning("Failed to create OOM script for '%s'", username)
 
-            # 7. Build environment and launch singleuser server
-            hub_api_url: Optional[str] = hub_settings.get("hub_api_url")
-            if not hub_api_url:
-                raise RuntimeError("hub_api_url not found in hub_settings.json")
-
-            env = self.get_env()
-            env["JUPYTERHUB_API_URL"] = hub_api_url
-
-            exports: str = " ".join(
-                f"{k}={shlex.quote(str(v))}"
-                for k, v in env.items()
-            )
-
-            log_file: str = f"/tmp/jupyterhub-{username}.log"
-
-            # Build the base singleuser command
             singleuser_cmd: str = (
                 f"nohup jupyterhub-singleuser "
                 f"--ip=0.0.0.0 "
-                f"--port={self.port} "
-                f"--ServerApp.base_url={self.server.base_url} "
+                f"--port={port} "
+                f"--ServerApp.base_url={shlex.quote(self.server.base_url)} "
                 f"--notebook-dir='~/notebook/'"
             )
 
@@ -558,12 +567,12 @@ class CustomSpawner(Spawner):
             mem = getattr(self, "_memory_max", None)
             cpu = getattr(self, "_cpu_quota", None)
             if mem or cpu:
-                unit_name = f"jupyterhub-{username}-{int(datetime.now(timezone.utc).timestamp())}"
+                unit_name = f"jupyterhub-{os_user}-{int(datetime.now(timezone.utc).timestamp())}"
                 props = ""
                 if mem:
-                    props += f" --property=MemoryMax={mem}"
+                    props += f" --property=MemoryMax={shlex.quote(str(mem))}"
                 if cpu:
-                    props += f" --property=CPUQuota={cpu}"
+                    props += f" --property=CPUQuota={shlex.quote(str(cpu))}"
                 singleuser_cmd = (
                     f"systemd-run --user --scope "
                     f"--unit={unit_name}{props} "
@@ -577,58 +586,62 @@ class CustomSpawner(Spawner):
                     cpu,
                 )
 
-            cmd: str = (
-                f"{exports} "
-                f"{singleuser_cmd} "
-                f"&> {log_file} & "
-                f"echo $! > {self._pid_file} && disown"
+            # Secrets go through stdin, never argv, so `ps` on the worker
+            # cannot show the API token or Vault secrets to other users.
+            exports: str = "".join(
+                f"export {k}={shlex.quote(str(v))}\n" for k, v in env.items()
+            )
+            script: str = (
+                f"{exports}"
+                f"{singleuser_cmd} < /dev/null &> {_LOG_FILE} &\n"
+                f"echo $! > {_PID_FILE}\n"
+                f"disown\n"
             )
 
             self.log.info(
                 "CustomSpawner: spawning server for '%s' on %s:%d (role=%s)",
                 username,
                 self.ip,
-                self.port,
+                port,
                 role,
             )
-            ssh.exec_command(f"bash -l -c {shlex.quote(cmd)}")
-
+            stdin, launch_out, _ = ssh.exec_command("bash -l -s")
+            stdin.write(script)
+            stdin.channel.shutdown_write()
+            if launch_out.channel.recv_exit_status() != 0:
+                raise RuntimeError(f"Launch script failed for '{username}' on {self.ip}")
+            return port
         finally:
             ssh.close()
 
-        # 8. Persist session to SQLite
-        start_time: str = datetime.now(timezone.utc).isoformat()
-        self._session_meta = {
-            "pid": None,  # PID is written async by the remote shell
-            "vm_ip": self.ip,
-            "port": self.port,
-            "start_time": start_time,
-            "role": role,
-            "group_name": group,
-        }
-        _store.set_session(
-            username,
-            vm_ip=self.ip,
-            port=self.port,
-            start_time=start_time,
-            role=role,
-            status="running",
-            group_name=group,
-        )
-        self.log.info("CustomSpawner: session record written for '%s'", username)
+    def _remote_server_info(self, vm_ip: str, group_name: str) -> Dict[str, Any]:
+        """SSH details for an existing session; falls back to the session's IP."""
+        if group_name:
+            return self._get_server_info(group_name)
+        return {"server_ip": vm_ip, "server_ssh_key": ""}
 
-        # 9. Tell the JupyterHub proxy where to route traffic
-        return (self.ip, self.port)
+    def _run_remote(self, server_info: Dict[str, Any], cmd: str) -> str:
+        """Run *cmd* over SSH and return stdout once it exits. Blocking."""
+        ssh = self._open_ssh(server_info)
+        try:
+            _, stdout, _ = ssh.exec_command(cmd)
+            return stdout.read().decode().strip()
+        finally:
+            ssh.close()
 
     async def stop(self, now: bool = False) -> None:
         """
         Terminate the remote ``jupyterhub-singleuser`` process for this user.
 
-        Reads the target VM IP and PID from SQLite so that this method works
+        Reads the target VM IP from SQLite so that this method works
         correctly even after a hub crash and restart (crash recovery).
 
         Termination sequence:
             SIGTERM → wait 5 seconds → SIGKILL (if process still alive)
+
+        The session row is removed only after the remote kill succeeded.
+        If SSH fails the error is raised, so JupyterHub keeps the server
+        recorded instead of leaving an untracked process on the worker.
 
         Args:
             now: Ignored (present for Spawner API compatibility).
@@ -639,8 +652,8 @@ class CustomSpawner(Spawner):
         session = _store.get_session(username)
 
         if session:
-            vm_ip: str = session.get("vm_ip", self.ip or "")
-            group_name: str = session.get("group_name", "")
+            vm_ip: str = session.get("vm_ip") or self.ip or ""
+            group_name: str = session.get("group_name") or ""
         else:
             # Fallback to in-memory metadata if SQLite row is missing
             vm_ip = self.ip or ""
@@ -652,102 +665,70 @@ class CustomSpawner(Spawner):
             )
             return
 
-        # Resolve SSH connection details
-        try:
-            server_info = self._get_server_info(group_name) if group_name else {}
-            if not server_info:
-                # Fallback: build minimal server_info from session data
-                server_info = {"server_ip": vm_ip, "server_ssh_key": ""}
-        except Exception as exc:
-            self.log.error(
-                "CustomSpawner.stop: mapping lookup failed for '%s': %s",
-                username,
-                exc,
-            )
-            return
-
-        pid_file: str = self._pid_file or f"/tmp/jupyterhub-{username}.pid"
-
         # SIGTERM → 5 s → SIGKILL
         cleanup_cmd: str = (
-            f"if [ -f {pid_file} ]; then "
-            f"  PID=$(cat {pid_file}); "
+            f"if [ -f {_PID_FILE} ]; then "
+            f"  PID=$(cat {_PID_FILE}); "
             f"  if ps -p $PID > /dev/null 2>&1; then "
             f"    kill -15 $PID; "
             f"    sleep 5; "
             f"    kill -9 $PID 2>/dev/null || true; "
             f"  fi; "
-            f"  rm -f {pid_file}; "
+            f"  rm -f {_PID_FILE}; "
             f"fi"
         )
 
+        self.log.info("CustomSpawner: stopping server for '%s' on %s", username, vm_ip)
         try:
-            self.log.info(
-                "CustomSpawner: stopping server for '%s' on %s", username, vm_ip
-            )
-            ssh = self._open_ssh(server_info)
-            try:
-                _, stop_out, _ = ssh.exec_command(cleanup_cmd)
-                stop_out.channel.recv_exit_status()  # wait for completion
-            finally:
-                ssh.close()
-        except Exception as exc:  # noqa: BLE001
+            server_info = self._remote_server_info(vm_ip, group_name)
+            await asyncio.to_thread(self._run_remote, server_info, cleanup_cmd)
+        except Exception as exc:
             self.log.error("CustomSpawner: SSH stop failed for '%s': %s", username, exc)
+            raise
 
-        # Update SQLite — mark stopped, then remove the row
-        _store.set_session(username, status="stopped")
         _store.clear_session(username)
-
-        # Post-stop hook (telemetry / lock-release stub)
-        await self.post_stop_hook()
 
     async def poll(self) -> Optional[int]:
         """
         Check whether the remote ``jupyterhub-singleuser`` process is alive.
 
-        Reads the VM IP and PID from SQLite so that ``poll()`` remains correct
+        Reads the VM IP from SQLite so that ``poll()`` remains correct
         after a hub restart (crash recovery — no local state required).
 
         Returns:
-            ``None`` if the process is running.
-            ``0`` if the process has stopped or an error occurred.
+            ``None`` if the process is running, or if its state cannot be
+            checked right now (SSH/DB error) — a blip must not make the Hub
+            forget a live server.
+            ``0`` only when there is no session or the process is gone.
         """
         username: str = self.user.name
 
-        # Prefer SQLite session data for crash-safe polling
-        session = _store.get_session(username)
+        try:
+            session = _store.get_session(username)
+        except Exception:  # noqa: BLE001
+            return None  # DB error: state unknown, keep the server
         if not session:
-            # No session row → assume not running
             return 0
 
-        vm_ip: str = session.get("vm_ip", self.ip or "")
-        group_name: str = session.get("group_name", "")
+        vm_ip: str = session.get("vm_ip") or self.ip or ""
+        group_name: str = session.get("group_name") or ""
 
         if not vm_ip:
             return 0
 
-        pid_file: str = self._pid_file or f"/tmp/jupyterhub-{username}.pid"
-
         try:
-            server_info = (
-                self._get_server_info(group_name)
-                if group_name
-                else {"server_ip": vm_ip, "server_ssh_key": ""}
+            server_info = self._remote_server_info(vm_ip, group_name)
+            status: str = await asyncio.to_thread(
+                self._run_remote,
+                server_info,
+                f"ps -p $(cat {_PID_FILE} 2>/dev/null) > /dev/null 2>&1 "
+                f"&& echo 0 || echo 1",
             )
-            ssh = self._open_ssh(server_info)
-            try:
-                _, stdout, _ = ssh.exec_command(
-                    f"ps -p $(cat {pid_file} 2>/dev/null) > /dev/null 2>&1 "
-                    f"&& echo 0 || echo 1"
-                )
-                status: str = stdout.read().decode().strip()
-            finally:
-                ssh.close()
         except Exception as exc:  # noqa: BLE001
             self.log.warning(
                 "CustomSpawner.poll: SSH check failed for '%s': %s", username, exc
             )
-            return 0
+            return None
 
         if status == "0":
             return None  # Running — JupyterHub Spawner API convention
@@ -767,7 +748,6 @@ class CustomSpawner(Spawner):
         """
         username: str = self.user.name
         _store.clear_session(username)
-        self._pid_file = None
         self._session_meta = {}
         self.ip = ""
         self.port = 0

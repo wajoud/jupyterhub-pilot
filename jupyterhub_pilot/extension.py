@@ -44,6 +44,16 @@ def _truncate(text: str, max_chars: int = 800) -> str:
     return text[:half] + f"\n… [{len(text) - max_chars} chars omitted] …\n" + text[-half:]
 
 
+def _user_cells(shell) -> List[Tuple[int, str]]:
+    """Return (execution_count, source) for non-empty, non-magic cells."""
+    # input_hist_raw[i] is the cell run with execution count i.
+    return [
+        (i, h.strip())
+        for i, h in enumerate(shell.history_manager.input_hist_raw)
+        if h.strip() and not h.strip().startswith(_MAGIC_PREFIXES)
+    ]
+
+
 def _get_context(shell, n: int = 3) -> str:
     """
     Build a rich context string from the last *n* executed cells.
@@ -53,39 +63,23 @@ def _get_context(shell, n: int = 3) -> str:
       - Cell stdout/display output (if available and non-empty)
       - Top-10 namespace variable names + types (as a comment block)
     """
-    history = shell.history_manager.input_hist_raw
+    recent = _user_cells(shell)[-n:]
 
-    # Filter out magic-only cells and empty cells
-    valid: List[str] = [
-        h.strip()
-        for h in history
-        if h.strip() and not h.strip().startswith(_MAGIC_PREFIXES)
-    ]
-    recent = valid[-n:]
-
-    # Try to attach captured output for each cell using IPython's output cache
-    out_cache = getattr(shell, "_output_cache", {}) or {}
+    # IPython keeps each cell's result in Out[<execution count>]
+    out_cache = shell.user_ns.get("Out", {}) or {}
 
     sections: List[str] = []
-    total = len(recent)
-    for i, cell_src in enumerate(recent):
-        label = f"# ── Cell {total - len(recent) + i + 1} ──"
-        cell_out = out_cache.get(total - len(recent) + i, "")
+    for count, cell_src in recent:
+        label = f"# ── Cell {count} ──"
         cell_text = f"{label}\n{_truncate(cell_src)}"
-        if cell_out:
-            cell_text += f"\n# Output:\n# {_truncate(str(cell_out), 400)}"
+        # `in`, not truthiness: a DataFrame result has no truth value
+        if count in out_cache:
+            cell_text += f"\n# Output:\n# {_truncate(str(out_cache[count]), 400)}"
         sections.append(cell_text)
 
     # PERF FIX: single-pass with early-exit counter — avoids slicing twice.
-    ns = shell.user_ns
     ns_lines: List[str] = []
-    try:
-        items = reversed(ns.items())
-    except TypeError:
-        # Fallback for Python < 3.8 where dict_items is not reversible
-        items = reversed(list(ns.items()))
-        
-    for k, v in items:
+    for k, v in reversed(shell.user_ns.items()):
         if len(ns_lines) >= 10:
             break
         if k.startswith("_") or callable(v):
@@ -130,12 +124,6 @@ def _analyse_ast(source: str) -> str:
             # Missing docstring
             if not (node.body and isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, ast.Constant)):
                 issues.append(f"  - Line {node.lineno}: `{node.name}()` missing docstring")
-
-        # Deeply nested loops (3+ levels)
-        # NOTE: full parent tracking requires an AST visitor; the depth counter
-        # below is a stub kept for future implementation.
-        if isinstance(node, (ast.For, ast.While)):
-            pass  # placeholder — complexity check requires a NodeVisitor
 
         # Global statement
         if isinstance(node, ast.Global):
@@ -196,8 +184,9 @@ def _get_last_traceback(shell) -> Optional[Tuple[str, str]]:
     raw_tb = last_exc if isinstance(last_exc, str) else str(last_exc)
     cleaned = _clean_traceback(raw_tb)
 
-    history = shell.history_manager.input_hist_raw
-    last_cell = history[-1].strip() if history else ""
+    # history[-1] is the %fix cell itself; take the last real code cell.
+    cells = _user_cells(shell)
+    last_cell = cells[-1][1] if cells else ""
     return last_cell, cleaned
 
 
@@ -227,11 +216,10 @@ class JupyterHubPilotMagics(Magics):
 
     @magic_arguments()
     @argument("--run", action="store_true", help="Execute the generated code immediately")
-    @argument("--stream", action="store_true", help="[Scaffolded] Stream output token-by-token (future)")
     @argument("prompt", nargs="*", help="Natural language instruction")
     @line_magic
     def do(self, line):
-        """%do [--run] [--stream] <prompt> — Generate Python code from natural language."""
+        """%do [--run] <prompt> — Generate Python code from natural language."""
         args = parse_argstring(self.do, line)
         prompt = " ".join(args.prompt).strip()
 
@@ -285,8 +273,7 @@ class JupyterHubPilotMagics(Magics):
         """%review [-n N] [--all] — AST-aware code quality review."""
         args = parse_argstring(self.review, line)
 
-        history = self.shell.history_manager.input_hist_raw
-        valid = [h.strip() for h in history if h.strip() and not h.strip().startswith(_MAGIC_PREFIXES)]
+        valid = [src for _, src in _user_cells(self.shell)]
 
         if not valid:
             print("ℹ️  No cells to review yet.")
@@ -333,8 +320,7 @@ class JupyterHubPilotMagics(Magics):
         args = parse_argstring(self.rework, line)
         instruction = " ".join(args.instruction).strip() or "Refactor for clarity, readability, and best practices"
 
-        history = self.shell.history_manager.input_hist_raw
-        valid = [h.strip() for h in history if h.strip() and not h.strip().startswith(_MAGIC_PREFIXES)]
+        valid = [src for _, src in _user_cells(self.shell)]
 
         if not valid:
             print("ℹ️  No cells to rework yet.")

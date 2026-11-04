@@ -65,13 +65,15 @@ When prompted:
 On the **Hub VM**:
 
 ```bash
-python3 -m jupyterhub -f /opt/jupyterhub-pilot/jupyterhub_config.py \
-    --JupyterHub.authenticator_class=dummy \
-    --DummyAuthenticator.password=test
+export CLIENT_ID=... CLIENT_SECRET=... OAUTH_CALLBACK_URL=...
+export JUPYTERPILOT_AGENT_TOKEN=$(cat /etc/jupyterhub-pilot/agent_token)
+python3 -m jupyterhub -f /opt/jupyterhub-pilot/jupyterhub_config.py
 ```
 
+> ⚠️ Never start the Hub with `DummyAuthenticator` on a reachable network: anyone could log in as any user, including the admin.
+
 Then open `http://<HUB-PUBLIC-IP>:8000` and:
-1. Log in with your username and password `test`
+1. Log in with your Google admin account
 2. Go to **Admin** → **Groups** → create `team_alpha` → add your user
 3. Click **Start My Server**
 

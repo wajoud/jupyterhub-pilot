@@ -82,7 +82,7 @@ def _create_venv() -> bool:
     pip = _VENV_DIR / "bin" / "pip"
     print("[JupyterHub-Pilot] Installing AI dependencies into venv (once-only) …")
     subprocess.run(
-        [str(pip), "install", "--quiet", "jupyterhub_pilot[ai]@git+https://github.com/wajoud/jupyterhub-pilot.git"],
+        [str(pip), "install", "--quiet", "jupyterhub_pilot[ai]"],
         check=True,
     )
     print("[JupyterHub-Pilot] ✅ AI dependencies installed into venv.")
@@ -98,7 +98,7 @@ def _install_deps_inline() -> None:
     subprocess.run(
         [
             sys.executable, "-m", "pip", "install", "--quiet",
-            "jupyterhub_pilot[ai]@git+https://github.com/wajoud/jupyterhub-pilot.git",
+            "jupyterhub_pilot[ai]",
             "--break-system-packages",
             "--user",
         ],

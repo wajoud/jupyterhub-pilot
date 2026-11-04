@@ -34,7 +34,6 @@ def _make_shell(history=None, ns=None):
     shell = MagicMock()
     shell.history_manager.input_hist_raw = history or []
     shell.user_ns = ns or {}
-    shell._output_cache = {}
     shell._last_traceback = None
     return shell
 
@@ -100,6 +99,11 @@ class TestGetContext:
         ctx = _get_context(shell)
         assert "my_var" in ctx
         assert "int" in ctx
+
+    def test_includes_cell_output_by_execution_count(self):
+        shell = _make_shell(history=["", "x = 1", "x + 1"], ns={"Out": {2: 2}})
+        ctx = _get_context(shell)
+        assert "# Output:\n# 2" in ctx
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -185,6 +189,13 @@ class TestGetLastTraceback:
         cell, tb = result
         assert "1/0" in cell
         assert "ZeroDivisionError" in tb
+
+    def test_skips_the_fix_cell_itself(self):
+        # IPython stores "%fix" in history before the magic runs.
+        shell = _make_shell(history=["", "1/0", "%fix"])
+        shell._last_traceback = "ZeroDivisionError: division by zero"
+        cell, _ = _get_last_traceback(shell)
+        assert cell == "1/0"
 
 
 # ──────────────────────────────────────────────────────────────────────────────

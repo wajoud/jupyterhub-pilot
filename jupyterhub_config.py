@@ -8,7 +8,6 @@ import os
 import shutil
 import sys
 
-from jupyterhub.handlers import BaseHandler
 from oauthenticator.google import GoogleOAuthenticator
 
 # Load generalized settings
@@ -142,31 +141,8 @@ c.JupyterHub.cookie_options = {
     "samesite": "Lax",
 }
 
-# -------------------------------------------------
-# Extra Security: Hard Block /user/otheruser Access
-# -------------------------------------------------
-
-
-class BlockOtherUsersHandler(BaseHandler):
-    async def prepare(self):
-        user = self.current_user
-        if not user:
-            self.redirect("/hub/login")
-            return
-
-        path = self.request.path
-        if path.startswith("/user/"):
-            try:
-                target_user = path.split("/")[2]
-            except IndexError:
-                return
-
-            if target_user != user.name:
-                self.set_status(403)
-                self.finish("🚫 Access denied: You cannot access another user's server")
-
-
-# Register all handlers: monitoring endpoints + cross-user blocker
+# Register monitoring endpoints.  Cross-user access to /user/<name> is already
+# blocked by JupyterHub's own access scopes (admin_access = False above).
 c.JupyterHub.extra_handlers = [
     # Task 4: Monitoring — Agent WebSocket (Worker VMs connect here)
     (r"/monitoring/ws", AgentWebSocketHandler),
@@ -174,6 +150,4 @@ c.JupyterHub.extra_handlers = [
     (r"/monitoring/browser", BrowserWebSocketHandler),
     # Task 4: Monitoring — Dashboard page (all authenticated users)
     (r"/monitoring", MonitoringPageHandler),
-    # Security: block cross-user /user/<other> access
-    (r"/user/.*", BlockOtherUsersHandler),
 ]

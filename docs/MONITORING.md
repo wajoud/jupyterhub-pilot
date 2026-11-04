@@ -22,8 +22,10 @@ Browser (monitoring.html)
 
 To see a worker EC2 in the dashboard, you must run the lightweight `metrics_agent.py` on it.
 
+Agents authenticate with a shared token. Set the same `JUPYTERPILOT_AGENT_TOKEN` on the Hub process and on every agent (`install_hub.sh` generates one at `/etc/jupyterhub-pilot/agent_token`). The Hub rejects all agents while the variable is unset. The dashboard itself requires a JupyterHub login.
+
 ```bash
-python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py \
+JUPYTERPILOT_AGENT_TOKEN=<token> python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py \
     --hub      ws://10.0.0.10:8000/monitoring/ws \
     --interval 2
 ```
@@ -41,6 +43,8 @@ Description=JupyterHub-Pilot Metrics Agent
 After=network.target
 
 [Service]
+# Contains JUPYTERPILOT_AGENT_TOKEN=<token>; chmod 600
+EnvironmentFile=/etc/jupyterhub-pilot/agent.env
 ExecStart=/usr/bin/python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py \
     --hub ws://10.0.0.10:8000/monitoring/ws --interval 2
 Restart=always

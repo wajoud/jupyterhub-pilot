@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS team_mappings (
     team        TEXT PRIMARY KEY,
     server_ip   TEXT NOT NULL,
     ssh_key     TEXT NOT NULL,
-    ssh_user    TEXT DEFAULT NULL
+    ssh_user    TEXT DEFAULT NULL,
+    admin_ssh_user TEXT DEFAULT NULL
 );
 """
 
@@ -149,6 +150,12 @@ class SessionStore:
             conn.executescript(_PRAGMA_FAST)
             conn.execute(_DDL_TEAM_MAPPINGS)
             conn.execute(_DDL_USER_SESSIONS)
+            # Migrate DBs created before admin_ssh_user existed.
+            cols = {r["name"] for r in conn.execute("PRAGMA table_info(team_mappings)")}
+            if "admin_ssh_user" not in cols:
+                conn.execute(
+                    "ALTER TABLE team_mappings ADD COLUMN admin_ssh_user TEXT DEFAULT NULL"
+                )
             conn.commit()
             log.info("SessionStore: DB initialised at %s", self._db_path)
         # Also apply PRAGMAs on the persistent read connection if it exists
@@ -189,12 +196,12 @@ class SessionStore:
         Fetch the VM routing record for *team*.
 
         Returns a dict with keys ``team``, ``server_ip``, ``ssh_key``,
-        ``ssh_user`` — or ``None`` if the team is not found.
+        ``ssh_user``, ``admin_ssh_user`` — or ``None`` if the team is not found.
         """
         try:
             conn = self._get_read_conn()
             row = conn.execute(
-                "SELECT team, server_ip, ssh_key, ssh_user "
+                "SELECT team, server_ip, ssh_key, ssh_user, admin_ssh_user "
                 "FROM team_mappings WHERE team = ?",
                 (team,),
             ).fetchone()
@@ -210,6 +217,7 @@ class SessionStore:
         server_ip: str,
         ssh_key: str,
         ssh_user: Optional[str] = None,
+        admin_ssh_user: Optional[str] = None,
     ) -> None:
         """
         Insert or replace the VM routing record for *team*.
@@ -220,12 +228,15 @@ class SessionStore:
             ssh_key:   Absolute path to the SSH private key file.
             ssh_user:  SSH login username. ``None`` means use the JupyterHub
                        username at connect time.
+            admin_ssh_user: Sudo-capable login used to create users on the
+                       worker (JIT provisioning). ``None`` disables it.
         """
         with _write_lock, self._write_conn() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO team_mappings "
-                "(team, server_ip, ssh_key, ssh_user) VALUES (?, ?, ?, ?)",
-                (team, server_ip, ssh_key, ssh_user),
+                "(team, server_ip, ssh_key, ssh_user, admin_ssh_user) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (team, server_ip, ssh_key, ssh_user, admin_ssh_user),
             )
             conn.commit()
         log.info("SessionStore: mapping set for team '%s' → %s", team, server_ip)
@@ -239,6 +250,9 @@ class SessionStore:
         Returns a dict with keys ``username``, ``pid``, ``vm_ip``, ``port``,
         ``start_time``, ``role``, ``status``, ``group_name`` — or ``None``
         if no session row exists for the user.
+
+        Raises on a DB error, so callers never mistake "DB down" for
+        "no session" and drop a running server.
         """
         try:
             conn = self._get_read_conn()
@@ -252,7 +266,7 @@ class SessionStore:
         except Exception as exc:  # noqa: BLE001
             log.error("SessionStore.get_session(%s) failed: %s", username, exc)
             self._read_conn = None  # force reconnect on next call
-            return None
+            raise
 
     def set_session(self, username: str, **fields: Any) -> None:
         """
@@ -278,8 +292,6 @@ class SessionStore:
 
         # PERF FIX: Build an UPSERT using ON CONFLICT DO UPDATE (SQLite ≥3.24).
         # This is a single round-trip vs. the previous INSERT OR IGNORE + UPDATE.
-        all_cols = ["username", "pid", "vm_ip", "port", "start_time",
-                    "role", "status", "group_name"]
         set_clauses = ", ".join(
             f"{col} = excluded.{col}" for col in fields
         )

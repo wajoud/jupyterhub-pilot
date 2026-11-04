@@ -433,39 +433,47 @@ function colorForPct(pct) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Build worker card
 // ─────────────────────────────────────────────────────────────────────────────
+// Hostnames come from agents: escape before putting them into HTML.
+function esc(str) {
+  return String(str).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
 function createCard(hostname) {
+  const h = esc(hostname);
   const card = document.createElement('div');
   card.className = 'worker-card';
   card.id = `card-${CSS.escape(hostname)}`;
   card.innerHTML = `
     <div class="card-header">
       <div>
-        <div class="worker-name" id="wname-${hostname}">${hostname}</div>
-        <div class="worker-ip"  id="wip-${hostname}">—</div>
+        <div class="worker-name" id="wname-${h}">${h}</div>
+        <div class="worker-ip"  id="wip-${h}">—</div>
       </div>
-      <div class="worker-badge" id="badge-${hostname}">LIVE</div>
+      <div class="worker-badge" id="badge-${h}">LIVE</div>
     </div>
     <div class="card-body">
       <!-- Stats row -->
       <div class="stats-grid">
         <div class="stat-box">
           <div class="stat-label">CPU</div>
-          <div class="stat-value color-cpu" id="scpu-${hostname}">—</div>
+          <div class="stat-value color-cpu" id="scpu-${h}">—</div>
           <div class="stat-unit">percent</div>
         </div>
         <div class="stat-box">
           <div class="stat-label">Memory</div>
-          <div class="stat-value color-mem" id="smem-${hostname}">—</div>
+          <div class="stat-value color-mem" id="smem-${h}">—</div>
           <div class="stat-unit">percent</div>
         </div>
         <div class="stat-box">
           <div class="stat-label">Disk</div>
-          <div class="stat-value color-disk" id="sdisk-${hostname}">—</div>
+          <div class="stat-value color-disk" id="sdisk-${h}">—</div>
           <div class="stat-unit">percent</div>
         </div>
         <div class="stat-box">
           <div class="stat-label">↑ Speed</div>
-          <div class="stat-value color-net" id="supkbps-${hostname}">—</div>
+          <div class="stat-value color-net" id="supkbps-${h}">—</div>
           <div class="stat-unit">KB/s up</div>
         </div>
       </div>
@@ -474,31 +482,31 @@ function createCard(hostname) {
       <div class="metric-row">
         <div class="metric-header">
           <span class="metric-name">CPU Usage</span>
-          <span class="metric-val" id="vcpu-${hostname}">—</span>
+          <span class="metric-val" id="vcpu-${h}">—</span>
         </div>
-        <div class="bar-track"><div class="bar-fill bar-cpu" id="bcpu-${hostname}" style="width:0%"></div></div>
+        <div class="bar-track"><div class="bar-fill bar-cpu" id="bcpu-${h}" style="width:0%"></div></div>
       </div>
 
       <!-- Memory bar -->
       <div class="metric-row">
         <div class="metric-header">
           <span class="metric-name">Memory</span>
-          <span class="metric-val" id="vmem-${hostname}">—</span>
+          <span class="metric-val" id="vmem-${h}">—</span>
         </div>
-        <div class="bar-track"><div class="bar-fill bar-mem" id="bmem-${hostname}" style="width:0%"></div></div>
+        <div class="bar-track"><div class="bar-fill bar-mem" id="bmem-${h}" style="width:0%"></div></div>
       </div>
 
       <!-- Disk bar -->
       <div class="metric-row">
         <div class="metric-header">
           <span class="metric-name">Disk (root)</span>
-          <span class="metric-val" id="vdisk-${hostname}">—</span>
+          <span class="metric-val" id="vdisk-${h}">—</span>
         </div>
-        <div class="bar-track"><div class="bar-fill bar-disk" id="bdisk-${hostname}" style="width:0%"></div></div>
+        <div class="bar-track"><div class="bar-fill bar-disk" id="bdisk-${h}" style="width:0%"></div></div>
       </div>
 
       <!-- Load average -->
-      <div class="load-strip" id="load-${hostname}"></div>
+      <div class="load-strip" id="load-${h}"></div>
 
       <!-- Network row -->
       <div class="net-row">
@@ -506,16 +514,16 @@ function createCard(hostname) {
           <div class="net-icon">⬆️</div>
           <div>
             <div class="net-label">Upload</div>
-            <div class="net-value" id="nup-${hostname}">—</div>
-            <div class="net-total" id="nuptot-${hostname}">—</div>
+            <div class="net-value" id="nup-${h}">—</div>
+            <div class="net-total" id="nuptot-${h}">—</div>
           </div>
         </div>
         <div class="net-box">
           <div class="net-icon">⬇️</div>
           <div>
             <div class="net-label">Download</div>
-            <div class="net-value" id="ndown-${hostname}">—</div>
-            <div class="net-total" id="ndowntot-${hostname}">—</div>
+            <div class="net-value" id="ndown-${h}">—</div>
+            <div class="net-total" id="ndowntot-${h}">—</div>
           </div>
         </div>
       </div>
@@ -523,10 +531,10 @@ function createCard(hostname) {
       <!-- CPU Sparkline -->
       <div class="chart-row">
         <div class="chart-label">CPU History (last ${HISTORY} samples)</div>
-        <canvas id="chart-${hostname}" height="60"></canvas>
+        <canvas id="chart-${h}" height="60"></canvas>
       </div>
 
-      <div class="last-seen" id="ls-${hostname}">Last update: —</div>
+      <div class="last-seen" id="ls-${h}">Last update: —</div>
     </div>
   `;
   document.getElementById('workers-grid').appendChild(card);
@@ -625,7 +633,7 @@ function updateCard(hostname, snap) {
   const ts       = 'Last update: ' + new Date(snap.timestamp * 1000).toLocaleTimeString();
   const loadHtml = (cpu.load_avg && cpu.load_avg.length)
     ? ['1m', '5m', '15m'].map((t, i) =>
-        `<div class="load-chip">${t}: <span>${cpu.load_avg[i]}</span></div>`
+        `<div class="load-chip">${t}: <span>${esc(cpu.load_avg[i])}</span></div>`
       ).join('')
     : null;
 

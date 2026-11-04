@@ -68,6 +68,13 @@ chmod +x /opt/jupyterhub-pilot/get_port.py
 
 echo "📊 8. Configuring the Metrics Agent systemd service..."
 read -p "Enter the Hub's Private IP (to connect the agent to): " HUB_IP
+read -p "Paste the metrics agent token printed by install_hub.sh: " AGENT_TOKEN
+if [ -z "$AGENT_TOKEN" ]; then
+    echo "❌ Agent token cannot be empty. Setup aborted."
+    exit 1
+fi
+mkdir -p /etc/jupyterhub-pilot
+( umask 077; echo "JUPYTERPILOT_AGENT_TOKEN=$AGENT_TOKEN" > /etc/jupyterhub-pilot/agent.env )
 
 cat > /etc/systemd/system/jupyterhub_pilot-metrics.service << EOF
 [Unit]
@@ -77,6 +84,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
+EnvironmentFile=/etc/jupyterhub-pilot/agent.env
 ExecStart=/usr/bin/python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py --hub ws://$HUB_IP:8000/monitoring/ws
 Restart=always
 RestartSec=5

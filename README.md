@@ -7,7 +7,7 @@
 [![Python](https://img.shields.io/badge/Python-3.9%2B-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![JupyterHub](https://img.shields.io/badge/JupyterHub-Compatible-f37726?style=flat-square&logo=jupyter&logoColor=white)](https://jupyterhub.readthedocs.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=flat-square)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-107%20passing-22c55e?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-114%20passing-22c55e?style=flat-square)](tests/)
 [![AWS EC2](https://img.shields.io/badge/AWS-EC2%20Ready-FF9900?style=flat-square&logo=amazon-aws&logoColor=white)](AWS_EC2_DEPLOYMENT.md)
 
 *One Hub. Many teams. Every user isolated. AI in every cell.*
@@ -76,7 +76,7 @@ For a detailed, step-by-step walkthrough of deploying this across an actual clus
 
 ## 🧪 Testing
 
-All 107 tests run with **zero real infrastructure** — no SSH, no EC2, no Vault:
+All 114 tests run with **zero real infrastructure** — no SSH, no EC2, no Vault:
 
 ```bash
 # Install dev dependencies
@@ -95,7 +95,7 @@ JupyterHub-Pilot/
 ├── jupyterhub_pilot/                   # Core Python package
 ├── docs/                               # 📖 Modular Documentation Guides
 ├── scripts/                            # Automated bash setup scripts
-├── tests/                              # 107-test mock-based unit suite
+├── tests/                              # 114-test mock-based unit suite
 ├── spawner.py                          # SSH spawner core logic
 ├── INSTALL.md                          # Full installation guide
 └── AWS_EC2_DEPLOYMENT.md               # End-to-end AWS walkthrough

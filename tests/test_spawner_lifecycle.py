@@ -5,7 +5,7 @@ Unit tests for:
   - RBACManager  (2-tier admin/user model)
   - SessionStore (SQLite state DB wrapper)
   - CustomSpawner lifecycle: start(), stop(), poll(), clear_state()
-  - Lifecycle hooks: pre_spawn_hook, post_stop_hook
+  - Spawn preparation: _prepare_spawn
   - Crash recovery: stop() and poll() read from SQLite, not instance vars
   - JSON fallback: spawner falls back gracefully when SQLite is unavailable
 
@@ -94,7 +94,6 @@ def mock_spawner(store) -> CustomSpawner:
     instance.server = MagicMock()
     instance.server.base_url = "/user/test_user/"
     instance.log = MagicMock()
-    instance._pid_file = None
     instance._session_meta = {}
 
     # Point the module-level store singleton to our tmp DB store
@@ -127,6 +126,7 @@ def _make_ssh_mock(port: int = 8888, port_in_use: bool = False) -> MagicMock:
     stdout_oom = MagicMock()
     stdout_oom.channel.recv_exit_status.return_value = 0
     stdout_spawn = MagicMock()
+    stdout_spawn.channel.recv_exit_status.return_value = 0
 
     def exec_cmd_mock(cmd, *args, **kwargs):
         if "get_port.py" in cmd:
@@ -138,7 +138,7 @@ def _make_ssh_mock(port: int = 8888, port_in_use: bool = False) -> MagicMock:
         elif "mkdir" in cmd or "oom" in cmd.lower():
             return None, stdout_oom, None
         else:
-            return None, stdout_spawn, None
+            return MagicMock(), stdout_spawn, None
 
     mock_ssh.exec_command.side_effect = exec_cmd_mock
     return mock_ssh
@@ -297,7 +297,7 @@ class TestSpawnerStart:
         async def fake_hook():
             hook_called.append(True)
 
-        mock_spawner.pre_spawn_hook = fake_hook
+        mock_spawner._prepare_spawn = fake_hook
         with (
             patch.object(mock_spawner, "_open_ssh", return_value=mock_ssh),
             patch.dict(
@@ -306,7 +306,7 @@ class TestSpawnerStart:
         ):
             await mock_spawner.start()
 
-        assert hook_called, "pre_spawn_hook was not called"
+        assert hook_called, "_prepare_spawn was not called"
 
     @pytest.mark.anyio
     async def test_start_port_in_use_triggers_fuser(self, mock_spawner):
@@ -373,7 +373,6 @@ class TestSpawnerStop:
             status="running",
             group_name="team_alpha",
         )
-        mock_spawner._pid_file = "/tmp/jupyterhub-test_user.pid"
 
         mock_ssh = MagicMock()
         stdout_stop = MagicMock()
@@ -412,32 +411,6 @@ class TestSpawnerStop:
         ), "Session row should be removed after stop()"
 
     @pytest.mark.anyio
-    async def test_stop_post_hook_called(self, mock_spawner, store):
-        store.set_session(
-            "test_user",
-            vm_ip="192.168.1.100",
-            group_name="team_alpha",
-            status="running",
-        )
-        hook_called = []
-
-        async def fake_hook():
-            hook_called.append(True)
-
-        mock_spawner.post_stop_hook = fake_hook
-        mock_ssh = MagicMock()
-        mock_ssh.exec_command.return_value = (
-            None,
-            MagicMock(channel=MagicMock(recv_exit_status=MagicMock(return_value=0))),
-            None,
-        )
-
-        with patch.object(mock_spawner, "_open_ssh", return_value=mock_ssh):
-            await mock_spawner.stop()
-
-        assert hook_called, "post_stop_hook was not called"
-
-    @pytest.mark.anyio
     async def test_stop_no_session_logs_warning(self, mock_spawner, store):
         """stop() without a SQLite session and no ip → logs warning, no crash."""
         mock_spawner.ip = ""
@@ -447,8 +420,9 @@ class TestSpawnerStop:
         mock_spawner.log.warning.assert_called()
 
     @pytest.mark.anyio
-    async def test_stop_ssh_error_does_not_crash_hub(self, mock_spawner, store):
-        """SSH failure during stop() must be caught; hub process must survive."""
+    async def test_stop_ssh_error_keeps_session(self, mock_spawner, store):
+        """SSH failure during stop() is raised and the session row is kept,
+        so a still-running remote server is not forgotten."""
         store.set_session(
             "test_user",
             vm_ip="192.168.1.100",
@@ -460,8 +434,10 @@ class TestSpawnerStop:
             "_open_ssh",
             side_effect=Exception("Connection reset"),
         ):
-            await mock_spawner.stop()  # must not raise
+            with pytest.raises(Exception, match="Connection reset"):
+                await mock_spawner.stop()
         mock_spawner.log.error.assert_called()
+        assert store.get_session("test_user") is not None
 
 
 class TestSpawnerPoll:
@@ -474,7 +450,6 @@ class TestSpawnerPoll:
             group_name="team_alpha",
             status="running",
         )
-        mock_spawner._pid_file = "/tmp/jupyterhub-test_user.pid"
 
         stdout_ps = MagicMock()
         stdout_ps.read.return_value = b"0\n"
@@ -495,7 +470,6 @@ class TestSpawnerPoll:
             group_name="team_alpha",
             status="running",
         )
-        mock_spawner._pid_file = "/tmp/jupyterhub-test_user.pid"
 
         stdout_ps = MagicMock()
         stdout_ps.read.return_value = b"1\n"
@@ -514,7 +488,7 @@ class TestSpawnerPoll:
         assert result == 0
 
     @pytest.mark.anyio
-    async def test_poll_ssh_exception_returns_zero(self, mock_spawner, store):
+    async def test_poll_ssh_exception_returns_none(self, mock_spawner, store):
         store.set_session(
             "test_user",
             vm_ip="192.168.1.100",
@@ -525,7 +499,7 @@ class TestSpawnerPoll:
             mock_spawner, "_open_ssh", side_effect=Exception("Connection refused")
         ):
             result = await mock_spawner.poll()
-        assert result == 0
+        assert result is None
 
     @pytest.mark.anyio
     async def test_poll_stopped_updates_store_status(self, mock_spawner, store):
@@ -537,7 +511,6 @@ class TestSpawnerPoll:
             group_name="team_alpha",
             status="running",
         )
-        mock_spawner._pid_file = "/tmp/jupyterhub-test_user.pid"
 
         stdout_ps = MagicMock()
         stdout_ps.read.return_value = b"1\n"
@@ -559,7 +532,6 @@ class TestSpawnerClearState:
         store.set_session("test_user", vm_ip="192.168.1.100", status="running")
         mock_spawner.ip = "192.168.1.100"
         mock_spawner.port = 8888
-        mock_spawner._pid_file = "/tmp/jupyterhub-test_user.pid"
         mock_spawner._session_meta = {"role": "user"}
 
         mock_spawner.clear_state()  # sync — no await
@@ -570,14 +542,12 @@ class TestSpawnerClearState:
     async def test_clear_state_resets_instance_vars(self, mock_spawner, store):
         mock_spawner.ip = "192.168.1.100"
         mock_spawner.port = 8888
-        mock_spawner._pid_file = "/tmp/jupyterhub-test_user.pid"
         mock_spawner._session_meta = {"role": "admin"}
 
         mock_spawner.clear_state()  # sync — no await
 
         assert mock_spawner.ip == ""
         assert mock_spawner.port == 0
-        assert mock_spawner._pid_file is None
         assert mock_spawner._session_meta == {}
 
 
@@ -623,3 +593,46 @@ class TestJsonFallback:
         ):
             with pytest.raises(RuntimeError, match="not mapped"):
                 mock_spawner._get_server_info("unknown_group")
+
+
+class TestAdminSshUserRoundTrip:
+    def test_seeded_admin_ssh_user_reaches_spawner(self, mock_spawner, store, tmp_path):
+        """admin_ssh_user from user_mapping.json must survive seeding into
+        SQLite, or JIT provisioning silently never runs."""
+        import json
+
+        from jupyterhub_pilot.seed_sqlite import seed
+
+        mapping = tmp_path / "user_mapping.json"
+        mapping.write_text(json.dumps({
+            "team_alpha": {
+                "server_ip": "10.0.0.5",
+                "server_ssh_key": "/k",
+                "admin_ssh_user": "ubuntu",
+            }
+        }))
+        seed(store._db_path, str(mapping))
+
+        mock_spawner._get_server_info = CustomSpawner._get_server_info.__get__(
+            mock_spawner, CustomSpawner
+        )
+        with patch.object(spawner_module, "_PING_CACHE", None):
+            info = mock_spawner._get_server_info("team_alpha")
+        assert info["admin_ssh_user"] == "ubuntu"
+
+    def test_old_db_gets_admin_ssh_user_column(self, tmp_path):
+        import sqlite3
+
+        db = str(tmp_path / "old.db")
+        conn = sqlite3.connect(db)
+        conn.execute(
+            "CREATE TABLE team_mappings (team TEXT PRIMARY KEY, server_ip TEXT NOT NULL,"
+            " ssh_key TEXT NOT NULL, ssh_user TEXT DEFAULT NULL)"
+        )
+        conn.commit()
+        conn.close()
+
+        s = SessionStore(db)
+        s.init_db()
+        s.set_mapping("t", "1.2.3.4", "/k", None, "ubuntu")
+        assert s.get_mapping("t")["admin_ssh_user"] == "ubuntu"

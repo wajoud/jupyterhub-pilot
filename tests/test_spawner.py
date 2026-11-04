@@ -113,6 +113,7 @@ async def test_start_success(mock_spawner_instance):
 
     # Command 4: spawn singleuser server
     stdout_spawn = MagicMock()
+    stdout_spawn.channel.recv_exit_status.return_value = 0
 
     def exec_cmd_mock(cmd, *args, **kwargs):
         if "get_port.py" in cmd:
@@ -122,7 +123,7 @@ async def test_start_success(mock_spawner_instance):
         elif "99-admin-oom-enforcement.py" in cmd:
             return None, stdout_oom, None
         else:
-            return None, stdout_spawn, None
+            return MagicMock(), stdout_spawn, None
 
     mock_ssh.exec_command.side_effect = exec_cmd_mock
 
@@ -156,6 +157,7 @@ async def test_start_port_in_use_cleanup(mock_spawner_instance):
     stdout_oom.channel.recv_exit_status.return_value = 0
 
     stdout_spawn = MagicMock()
+    stdout_spawn.channel.recv_exit_status.return_value = 0
 
     executed_commands = []
 
@@ -168,7 +170,7 @@ async def test_start_port_in_use_cleanup(mock_spawner_instance):
         elif "99-admin-oom-enforcement.py" in cmd:
             return None, stdout_oom, None
         else:
-            return None, stdout_spawn, None
+            return MagicMock(), stdout_spawn, None
 
     mock_ssh.exec_command.side_effect = exec_cmd_mock
 
@@ -198,6 +200,7 @@ async def test_start_oom_warning(mock_spawner_instance):
     stdout_oom.channel.recv_exit_status.return_value = 1
 
     stdout_spawn = MagicMock()
+    stdout_spawn.channel.recv_exit_status.return_value = 0
 
     def exec_cmd_mock(cmd, *args, **kwargs):
         if "get_port.py" in cmd:
@@ -207,7 +210,7 @@ async def test_start_oom_warning(mock_spawner_instance):
         elif "mkdir" in cmd or "oom" in cmd.lower():
             return None, stdout_oom, None
         else:
-            return None, stdout_spawn, None
+            return MagicMock(), stdout_spawn, None
 
     mock_ssh.exec_command.side_effect = exec_cmd_mock
 
@@ -229,7 +232,6 @@ async def test_stop(mock_spawner_instance):
     import spawner as spawner_module
 
     mock_ssh = MagicMock()
-    mock_spawner_instance._pid_file = "/tmp/jupyterhub-test_user.pid"
     mock_spawner_instance.ip = "192.168.1.100"
 
     # Pre-populate SQLite so stop() can find the VM
@@ -248,7 +250,7 @@ async def test_stop(mock_spawner_instance):
         mock_ssh.exec_command.assert_called_once()
         cmd = mock_ssh.exec_command.call_args[0][0]
         assert "kill -15" in cmd
-        assert "/tmp/jupyterhub-test_user.pid" in cmd
+        assert "~/.jupyterhub-pilot.pid" in cmd
         mock_ssh.close.assert_called_once()
 
 
@@ -257,7 +259,6 @@ async def test_poll_running(mock_spawner_instance):
     import spawner as spawner_module
 
     mock_ssh = MagicMock()
-    mock_spawner_instance._pid_file = "/tmp/jupyterhub-test_user.pid"
 
     # Pre-populate SQLite so poll() can find the VM and PID
     spawner_module._store.set_session(
@@ -284,7 +285,6 @@ async def test_poll_stopped(mock_spawner_instance):
     import spawner as spawner_module
 
     mock_ssh = MagicMock()
-    mock_spawner_instance._pid_file = "/tmp/jupyterhub-test_user.pid"
 
     spawner_module._store.set_session(
         "test_user",
@@ -319,4 +319,46 @@ async def test_poll_exception(mock_spawner_instance):
         side_effect=Exception("SSH Connection Refused"),
     ):
         status = await mock_spawner_instance.poll()
-        assert status == 0  # Should assume stopped on exception
+        # Unknown state must not make the Hub forget a live server
+        assert status is None
+
+
+@pytest.mark.anyio
+async def test_start_secrets_go_through_stdin_not_argv(mock_spawner_instance):
+    mock_spawner_instance.get_env = lambda: {"JUPYTERHUB_API_TOKEN": "s3cret"}
+    mock_ssh = MagicMock()
+    stdin = MagicMock()
+    stdout = MagicMock()
+    stdout.readline.return_value = "8888\n"
+    stdout.read.return_value = b""
+    stdout.channel.recv_exit_status.return_value = 0
+    mock_ssh.exec_command.side_effect = lambda cmd, *a, **k: (stdin, stdout, None)
+
+    with patch.object(
+        mock_spawner_instance, "_open_ssh", return_value=mock_ssh
+    ), patch.dict(spawner.hub_settings, {"hub_api_url": "http://hub:8081/hub/api"}):
+        await mock_spawner_instance.start()
+
+    commands = " ".join(c.args[0] for c in mock_ssh.exec_command.call_args_list)
+    assert "s3cret" not in commands
+    script = stdin.write.call_args[0][0]
+    assert "export JUPYTERHUB_API_TOKEN=s3cret" in script
+    assert "/tmp/" not in script
+
+
+@pytest.mark.parametrize(
+    "name, expected",
+    [("alice@corp.com", "alice"), ("Bob", "bob"), ("a_b-1", "a_b-1")],
+)
+def test_os_username_maps_email_local_part(name, expected):
+    inst = CustomSpawner()
+    inst.user.name = name
+    assert inst._os_username() == expected
+
+
+@pytest.mark.parametrize("name", ['x";rm -rf ~;"', "a b", "$(id)@corp.com", "1abc", "alice\n"])
+def test_os_username_rejects_shell_unsafe_names(name):
+    inst = CustomSpawner()
+    inst.user.name = name
+    with pytest.raises(RuntimeError, match="cannot be mapped"):
+        inst._os_username()

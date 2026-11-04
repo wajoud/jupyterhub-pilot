@@ -80,7 +80,7 @@ No code changes, no restarts — promote a user to admin live via the JupyterHub
 
 ```text
 User spawns →
-  pre_spawn_hook() →
+  _prepare_spawn() →
     VaultClient.get_user_secrets("alice") →
       GET https://vault.internal/v1/secret/data/jupyterhub-pilot/alice →
         {"OPENAI_API_KEY": "sk-alice-...", "DATABASE_URL": "postgres://..."}

@@ -11,11 +11,14 @@ AgentWebSocketHandler  (``/monitoring/ws``)
     ``_WORKER_SNAPSHOTS`` dict and broadcasts updates to all connected
     Admin browser clients.
 
-MonitoringPageHandler  (``/monitoring``)
-    Serves the monitoring dashboard HTML page.
-    Accessible to ALL authenticated JupyterHub users (not admin-only):
-      - Regular users see their own Worker VM's metrics.
-      - Admins see all connected Worker VMs.
+MonitoringPageHandler  (``/monitoring``) and BrowserWebSocketHandler
+    Serve the dashboard and its live feed to logged-in JupyterHub users only.
+
+Authentication
+──────────────
+  - Browser endpoints require a JupyterHub login (cookie).
+  - Agents must send ``Authorization: Bearer <JUPYTERPILOT_AGENT_TOKEN>``.
+    The Hub refuses every agent while that env var is unset.
 
 Usage (wire in jupyterhub_config.py)
 ──────────────────────────────────────
@@ -40,11 +43,13 @@ Performance notes (PERF FIX):
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
 from typing import Any, Dict, Set, Union
 
+from jupyterhub.handlers import BaseHandler
 from tornado import web
 from tornado.websocket import WebSocketHandler
 
@@ -80,8 +85,18 @@ class AgentWebSocketHandler(WebSocketHandler):
     """
 
     def check_origin(self, origin: str) -> bool:
-        # Allow connections from Worker VMs in the same VPC
+        # Agents are not browsers; they authenticate with the token below.
         return True
+
+    def prepare(self) -> None:
+        expected = os.environ.get("JUPYTERPILOT_AGENT_TOKEN", "")
+        got = self.request.headers.get("Authorization", "")
+        if not expected or not hmac.compare_digest(got, f"Bearer {expected}"):
+            log.warning(
+                "MonitoringHandler: rejected agent from %s (bad or missing token)",
+                self.request.remote_ip,
+            )
+            raise web.HTTPError(403)
 
     def open(self, *args: str, **kwargs: str) -> None:
         log.info(
@@ -125,9 +140,12 @@ class AgentWebSocketHandler(WebSocketHandler):
 # ---------------------------------------------------------------------------
 
 
-class BrowserWebSocketHandler(WebSocketHandler):
+class BrowserWebSocketHandler(BaseHandler, WebSocketHandler):
     """
-    Accepts WebSocket connections from authenticated browser clients.
+    Accepts WebSocket connections from logged-in browser clients.
+
+    Tornado's default ``check_origin`` (same origin only) stays in place so
+    another site cannot open this socket with the user's cookie.
 
     On connection:
       1. Registers the client in ``_BROWSER_CLIENTS``.
@@ -136,8 +154,9 @@ class BrowserWebSocketHandler(WebSocketHandler):
     On close: removes the client from the set.
     """
 
-    def check_origin(self, origin: str) -> bool:
-        return True
+    @web.authenticated
+    async def get(self, *args: Any, **kwargs: Any) -> None:
+        await WebSocketHandler.get(self, *args, **kwargs)
 
     def open(self, *args: str, **kwargs: str) -> None:
         _BROWSER_CLIENTS.add(self)
@@ -176,13 +195,14 @@ _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 _DASHBOARD_HTML: str = ""
 
 
-class MonitoringPageHandler(web.RequestHandler):
+class MonitoringPageHandler(BaseHandler):
     """
     Serves the monitoring dashboard HTML at ``GET /monitoring``.
 
-    Accessible to all authenticated JupyterHub users.
+    Accessible to all logged-in JupyterHub users.
     """
 
+    @web.authenticated
     def get(self) -> None:
         global _DASHBOARD_HTML
         if not _DASHBOARD_HTML:

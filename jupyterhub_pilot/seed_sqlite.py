@@ -87,6 +87,7 @@ def seed(db_path: str, mapping_path: str) -> None:
         server_ip = info.get("server_ip", "")
         ssh_key = info.get("server_ssh_key", "")
         ssh_user = info.get("ssh_user")  # optional field
+        admin_ssh_user = info.get("admin_ssh_user")  # optional: JIT provisioning
 
         if not server_ip or not ssh_key:
             print(
@@ -96,7 +97,7 @@ def seed(db_path: str, mapping_path: str) -> None:
             skipped += 1
             continue
 
-        store.set_mapping(team, server_ip, ssh_key, ssh_user)
+        store.set_mapping(team, server_ip, ssh_key, ssh_user, admin_ssh_user)
         print(f"  ✓ {team:30s} → {server_ip}")
         seeded += 1
 
