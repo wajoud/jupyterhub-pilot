@@ -47,14 +47,21 @@ c.ConfigurableHTTPProxy.api_url = hub_settings["proxy_api_url"]
 # -------------------------------------------------
 # Authentication & Authorization
 # -------------------------------------------------
-c.JupyterHub.authenticator_class = GoogleOAuthenticator
+if os.getenv("JUPYTERPILOT_TEST_PASSWORD"):
+    # ⚠️ TEST ONLY (no Google client or domain needed): any user name logs in with
+    # this password; admin_users log in with JUPYTERPILOT_TEST_ADMIN_PASSWORD (32+ chars).
+    c.JupyterHub.authenticator_class = "shared-password"
+    c.SharedPasswordAuthenticator.user_password = os.environ["JUPYTERPILOT_TEST_PASSWORD"]
+    c.SharedPasswordAuthenticator.admin_password = os.getenv("JUPYTERPILOT_TEST_ADMIN_PASSWORD", "")
+else:
+    c.JupyterHub.authenticator_class = GoogleOAuthenticator
 
-c.GoogleOAuthenticator.client_id = os.getenv("CLIENT_ID")
-c.GoogleOAuthenticator.client_secret = os.getenv("CLIENT_SECRET")
-c.GoogleOAuthenticator.oauth_callback_url = os.getenv("OAUTH_CALLBACK_URL")
+    c.GoogleOAuthenticator.client_id = os.getenv("CLIENT_ID")
+    c.GoogleOAuthenticator.client_secret = os.getenv("CLIENT_SECRET")
+    c.GoogleOAuthenticator.oauth_callback_url = os.getenv("OAUTH_CALLBACK_URL")
 
-# 🔐 CRITICAL: Strictly enforce hosted domain from config
-c.GoogleOAuthenticator.hosted_domain = hub_settings["hosted_domain"]
+    # 🔐 CRITICAL: Strictly enforce hosted domain from config
+    c.GoogleOAuthenticator.hosted_domain = hub_settings["hosted_domain"]
 
 # allow_all=True at the Authenticator level allows anyone from the hosted_domain
 c.Authenticator.allow_all = True
@@ -77,10 +84,14 @@ c.Spawner.default_url = "/tree"
 # -------------------------------------------------
 # Cookie & Security Settings
 # -------------------------------------------------
-c.JupyterHub.cookie_options = {
-    "httponly": True,
-    "secure": True,
-    "samesite": "Lax",
+# JupyterHub reads these from tornado_settings; a top-level JupyterHub.cookie_options
+# is not a real option and was silently ignored.
+c.JupyterHub.tornado_settings = {
+    "cookie_options": {
+        "httponly": True,
+        "secure": True,
+        "samesite": "Lax",
+    }
 }
 
 # Register monitoring endpoints.  Cross-user access to /user/<name> is already

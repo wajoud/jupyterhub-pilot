@@ -79,7 +79,7 @@ def test_load_mapping_failure():
 @pytest.mark.anyio
 async def test_start_no_groups(mock_spawner_instance):
     mock_spawner_instance.user.groups = []
-    with pytest.raises(Exception, match="has no groups assigned"):
+    with pytest.raises(spawner.web.HTTPError, match="not in a team"):
         await mock_spawner_instance.start()
 
 
@@ -386,6 +386,7 @@ def test_jit_provisioning_script_creates_dotted_user_without_pip():
         inst._provision_user_jit(JIT_SERVER)
     script = ssh.exec_command.call_args.args[0]
     assert 'adduser --allow-bad-names --disabled-password --gecos "" alice.smith' in script
+    assert "|| sudo useradd -m -s /bin/bash alice.smith" in script  # Amazon Linux fallback
     assert "pip3 install" not in script  # packages are installed once per worker
     ssh.close.assert_called_once()
 

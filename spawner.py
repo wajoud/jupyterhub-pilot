@@ -49,6 +49,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
 import paramiko
+from tornado import web
 
 try:
     import paramiko.ssh_exception as _paramiko_ssh_exc
@@ -283,7 +284,9 @@ class CustomSpawner(Spawner):
         fi
 
         echo "Creating user {target_user}..."
-        sudo adduser --allow-bad-names --disabled-password --gecos "" {u}
+        # Amazon Linux's adduser is plain useradd and rejects the Debian flags.
+        sudo adduser --allow-bad-names --disabled-password --gecos "" {u} \\
+            || sudo useradd -m -s /bin/bash {u}
         sudo loginctl enable-linger {u}
 
         sudo -u {u} mkdir -p {home}/notebook
@@ -443,9 +446,11 @@ class CustomSpawner(Spawner):
         # from starting someone else's server.
         user_groups = [g.name for g in self.user.groups]
         if not user_groups:
-            raise RuntimeError(
-                f"User '{username}' has no groups assigned. "
-                "Assign the user to a team group in JupyterHub before spawning."
+            # HTTPError passes through to the page as a readable message, not a bare 500.
+            raise web.HTTPError(
+                403,
+                f"User '{username}' is not in a team yet. "
+                "Ask an admin to add you to a team group (Admin → Groups), then start your server.",
             )
 
         group: str = user_groups[0]

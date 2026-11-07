@@ -321,8 +321,9 @@ class TestSpawnerStart:
     @pytest.mark.anyio
     async def test_start_no_groups_raises(self, mock_spawner):
         mock_spawner.user.groups = []
-        with pytest.raises(RuntimeError, match="no groups assigned"):
+        with pytest.raises(spawner_module.web.HTTPError, match="not in a team") as exc:
             await mock_spawner.start()
+        assert exc.value.status_code == 403  # shown on the page, not a bare 500
 
     @pytest.mark.anyio
     async def test_start_missing_hub_api_url_raises(self, mock_spawner):

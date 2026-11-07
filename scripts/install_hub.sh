@@ -40,10 +40,13 @@ pip3 install jupyterhub oauthenticator --break-system-packages --ignore-installe
 if [ -d "/opt/jupyterhub-pilot" ]; then
     echo "ℹ️  /opt/jupyterhub-pilot already exists. Updating..."
     cd /opt/jupyterhub-pilot
-    git pull
+    # --autostash: this script rewrites tracked files (hub_settings.json, user_mapping.json)
+    git -c safe.directory=/opt/jupyterhub-pilot pull --autostash
 else
     echo "📥 Cloning JupyterHub-Pilot..."
-    git clone https://github.com/wajoud/jupyterhub-pilot.git /opt/jupyterhub-pilot
+    # Install the same branch as the clone this script runs from (main if unknown).
+    BRANCH=$(git -c safe.directory='*' -C "$(dirname "$0")" rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)
+    git clone --branch "$BRANCH" https://github.com/wajoud/jupyterhub-pilot.git /opt/jupyterhub-pilot
     chown -R $SUDO_USER:$SUDO_USER /opt/jupyterhub-pilot
 fi
 # [hub] pulls in paramiko, which the spawner needs for SSH.
@@ -74,15 +77,13 @@ read -p "Enter your admin username, the part before @ (e.g. admin for admin@exam
 ADMIN_USER="${ADMIN_USER%%@*}"
 read -p "Enter the Worker's Private IP (e.g. 172.31.y.y): " WORKER_IP
 
-cat > /opt/jupyterhub-pilot/user_mapping.json << EOF
-{
-  "team_alpha": {
-    "server_ip": "$WORKER_IP",
-    "server_ssh_key": "/opt/jupyterhub-pilot/keys/worker",
-    "admin_ssh_user": "ubuntu"
-  }
-}
-EOF
+# Upsert team_alpha so a re-run keeps teams added later with add_worker.sh.
+MAPPING=/opt/jupyterhub-pilot/user_mapping.json
+# The tracked file holds sample teams: start empty unless it was edited by an earlier run.
+git -c safe.directory=/opt/jupyterhub-pilot -C /opt/jupyterhub-pilot diff --quiet -- user_mapping.json && echo '{}' > "$MAPPING"
+jq --arg ip "$WORKER_IP" \
+    '.team_alpha = {server_ip: $ip, server_ssh_key: "/opt/jupyterhub-pilot/keys/worker", admin_ssh_user: "ubuntu"}' \
+    "$MAPPING" > "$MAPPING.tmp" && mv "$MAPPING.tmp" "$MAPPING"
 
 cat > /opt/jupyterhub-pilot/hub_settings.json << EOF
 {
@@ -117,6 +118,40 @@ python3 /opt/jupyterhub-pilot/jupyterhub_pilot/seed_sqlite.py --db /var/lib/jupy
 # Ensure the DB file is writable by the ubuntu user (Hub runs as ubuntu, not root)
 chown -R ${SUDO_USER:-ubuntu}:${SUDO_USER:-ubuntu} /var/lib/jupyterhub
 
+echo "⚙️  7. Writing the Hub systemd service (not started yet)..."
+# Secrets live in a root-only env file; an existing one is kept so re-runs don't wipe them.
+if [ ! -f /etc/jupyterhub-pilot/hub.env ]; then
+    ( umask 077; cat > /etc/jupyterhub-pilot/hub.env << EOF
+# Google login (production):
+CLIENT_ID=
+CLIENT_SECRET=
+OAUTH_CALLBACK_URL=https://hub.example.com/hub/oauth_callback
+JUPYTERPILOT_AGENT_TOKEN=$(cat /etc/jupyterhub-pilot/agent_token)
+# TEST ONLY, no Google or domain: set both and leave the Google lines empty.
+# Any user name logs in with the first password; admins with the second (32+ characters).
+#JUPYTERPILOT_TEST_PASSWORD=
+#JUPYTERPILOT_TEST_ADMIN_PASSWORD=$(openssl rand -hex 16)
+EOF
+    )
+fi
+cat > /etc/systemd/system/jupyterhub.service << EOF
+[Unit]
+Description=JupyterHub-Pilot Hub
+After=network.target
+
+[Service]
+User=${RUNNING_USER}
+WorkingDirectory=/opt/jupyterhub-pilot
+EnvironmentFile=/etc/jupyterhub-pilot/hub.env
+ExecStart=/usr/bin/python3 -m jupyterhub -f /opt/jupyterhub-pilot/jupyterhub_config.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+
 echo ""
 echo "🎉 Hub Setup Complete!"
 echo "────────────────────────────────────"
@@ -127,7 +162,9 @@ echo ""
 echo "⚠️  Paste this metrics agent token into install_worker.sh on each Worker:"
 cat /etc/jupyterhub-pilot/agent_token
 echo ""
-echo "Edit hosted_domain in /opt/jupyterhub-pilot/hub_settings.json, then start the Hub with:"
-echo "export CLIENT_ID=... CLIENT_SECRET=... OAUTH_CALLBACK_URL=..."
-echo "export JUPYTERPILOT_AGENT_TOKEN=\$(cat /etc/jupyterhub-pilot/agent_token)"
-echo "python3 -m jupyterhub -f /opt/jupyterhub-pilot/jupyterhub_config.py"
+echo "Then:"
+echo "  1. sudo nano /etc/jupyterhub-pilot/hub.env   (Google client, or the TEST ONLY passwords)"
+echo "  2. Google login: set hosted_domain in /opt/jupyterhub-pilot/hub_settings.json"
+echo "  3. sudo systemctl enable --now jupyterhub    (logs: sudo journalctl -u jupyterhub -f)"
+echo "  4. Put Caddy in front for HTTPS (README → HTTPS with Caddy)"
+echo "  5. More workers: sudo bash /opt/jupyterhub-pilot/scripts/add_worker.sh team_beta <worker-private-ip>"

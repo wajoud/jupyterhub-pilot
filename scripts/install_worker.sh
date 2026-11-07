@@ -20,7 +20,9 @@ if [ -d "/opt/jupyterhub-pilot" ]; then
     echo "ℹ️  /opt/jupyterhub-pilot already exists. Updating..."
     cd /opt/jupyterhub-pilot && git pull && cd -
 else
-    git clone https://github.com/wajoud/jupyterhub-pilot.git /opt/jupyterhub-pilot
+    # Install the same branch as the clone this script runs from (main if unknown).
+    BRANCH=$(git -c safe.directory='*' -C "$(dirname "$0")" rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)
+    git clone --branch "$BRANCH" https://github.com/wajoud/jupyterhub-pilot.git /opt/jupyterhub-pilot
 fi
 
 # Ask for admin username
@@ -89,7 +91,7 @@ After=network.target
 Type=simple
 User=root
 EnvironmentFile=/etc/jupyterhub-pilot/agent.env
-ExecStart=/usr/bin/python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py --hub ws://$HUB_IP:8000/monitoring/ws
+ExecStart=/usr/bin/python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py --hub ws://$HUB_IP:8000/hub/monitoring/ws
 Restart=always
 RestartSec=5
 
