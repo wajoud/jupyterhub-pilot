@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jupyterhub-pilot"
-version = "0.2.4"
+version = "0.3.0"
 description = "Agentic AI coding partner for JupyterHub and IPython"
 readme = "PYPI_README.md"
 requires-python = ">=3.9"
@@ -84,3 +84,7 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["jupyterhub_pilot*"]
+
+# Ship the monitoring dashboard page (not a .py file, so not included by default)
+[tool.setuptools.package-data]
+jupyterhub_pilot = ["static/*.html"]
