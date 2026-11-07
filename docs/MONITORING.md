@@ -22,8 +22,10 @@ Browser (monitoring.html)
 
 To see a worker EC2 in the dashboard, you must run the lightweight `metrics_agent.py` on it.
 
+Agents authenticate with a shared token. Set the same `JUPYTERPILOT_AGENT_TOKEN` on the Hub process and on every agent (`install_hub.sh` generates one at `/etc/jupyterhub-pilot/agent_token`). The Hub rejects all agents while the variable is unset. The dashboard itself requires a JupyterHub login.
+
 ```bash
-python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py \
+JUPYTERPILOT_AGENT_TOKEN=<token> python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py \
     --hub      ws://10.0.0.10:8000/monitoring/ws \
     --interval 2
 ```
@@ -41,6 +43,8 @@ Description=JupyterHub-Pilot Metrics Agent
 After=network.target
 
 [Service]
+# Contains JUPYTERPILOT_AGENT_TOKEN=<token>; chmod 600
+EnvironmentFile=/etc/jupyterhub-pilot/agent.env
 ExecStart=/usr/bin/python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py \
     --hub ws://10.0.0.10:8000/monitoring/ws --interval 2
 Restart=always
@@ -60,7 +64,7 @@ sudo systemctl enable --now jupyterhub_pilot-agent
 
 ## Viewing the Dashboard
 
-**Visit `http://<HUB-PUBLIC-IP>:8000/monitoring` to see the live dashboard.**
+**Visit `https://<your-hub-domain>/hub/monitoring` to see the live dashboard.**
 
 What you see per worker EC2:
 - **CPU:** Live CPU % (total + per-core) and 1/5/15-min load averages
@@ -70,6 +74,8 @@ What you see per worker EC2:
 
 ### Access control
 
-- All authenticated JupyterHub users can view the dashboard.
-- Regular users see **only** their own worker EC2's panel (the machine their group is assigned to).
+- All authenticated JupyterHub users can open the dashboard.
+- Regular users see **only** the workers their groups are mapped to (`server_ip` in the team mapping).
 - Admins see **all** connected workers across the entire cluster.
+- A worker is matched by the IP the Hub sees for its agent's connection, so `server_ip` must be the worker's **private** IP (the one the agent connects from).
+- When an agent disconnects, its worker disappears from the dashboard.

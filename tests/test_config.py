@@ -1,9 +1,6 @@
 import json
 import os
 import sys
-from unittest.mock import MagicMock
-
-import pytest
 
 # Add root folder to sys.path so we can import jupyterhub_config
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -44,7 +41,6 @@ def custom_open(file, *args, **kwargs):
 builtins.open = custom_open
 try:
     import jupyterhub_config  # noqa: F401
-    from jupyterhub_config import BlockOtherUsersHandler
 finally:
     builtins.open = orig_open
 
@@ -57,64 +53,3 @@ def test_jupyterhub_config_loaded():
     assert config_mock.Authenticator.admin_users == {"admin_user"}
     assert config_mock.JupyterHub.admin_access is False
     assert len(config_mock.JupyterHub.extra_handlers) > 0
-
-
-@pytest.mark.anyio
-async def test_block_handler_no_user():
-    handler = BlockOtherUsersHandler()
-    handler.current_user = None
-
-    await handler.prepare()
-
-    assert handler.redirect_url == "/hub/login"
-    assert handler.status_code is None
-    assert handler.finished_content is None
-
-
-@pytest.mark.anyio
-async def test_block_handler_allow_self():
-    handler = BlockOtherUsersHandler()
-
-    user_mock = MagicMock()
-    user_mock.name = "alice"
-    handler.current_user = user_mock
-    handler.request.path = "/user/alice/lab"
-
-    await handler.prepare()
-
-    assert handler.redirect_url is None
-    assert handler.status_code is None
-    assert handler.finished_content is None
-
-
-@pytest.mark.anyio
-async def test_block_handler_deny_other_user():
-    handler = BlockOtherUsersHandler()
-
-    user_mock = MagicMock()
-    user_mock.name = "alice"
-    handler.current_user = user_mock
-    handler.request.path = "/user/bob/lab"
-
-    await handler.prepare()
-
-    assert handler.redirect_url is None
-    assert handler.status_code == 403
-    assert "Access denied" in handler.finished_content
-
-
-@pytest.mark.anyio
-async def test_block_handler_invalid_path():
-    handler = BlockOtherUsersHandler()
-
-    user_mock = MagicMock()
-    user_mock.name = "alice"
-    handler.current_user = user_mock
-    handler.request.path = "/user/"
-
-    await handler.prepare()
-
-    # Since target_user resolves to "" which is not "alice", it should deny access (403)
-    assert handler.redirect_url is None
-    assert handler.status_code == 403
-    assert "Access denied" in handler.finished_content

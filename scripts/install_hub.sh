@@ -46,7 +46,8 @@ else
     git clone https://github.com/wajoud/jupyterhub-pilot.git /opt/jupyterhub-pilot
     chown -R $SUDO_USER:$SUDO_USER /opt/jupyterhub-pilot
 fi
-pip3 install -e /opt/jupyterhub-pilot --break-system-packages
+# [hub] pulls in paramiko, which the spawner needs for SSH.
+pip3 install -e "/opt/jupyterhub-pilot[hub]" --break-system-packages
 
 echo "🗄️ 3. Setting up Database..."
 mkdir -p /var/lib/jupyterhub
@@ -68,7 +69,9 @@ chmod 600 /opt/jupyterhub-pilot/keys/worker
 # Interactive configuration
 echo "⚙️  5. Configuring JupyterHub-Pilot"
 read -p "Enter the Hub's Private IP (e.g. 172.31.x.x): " HUB_IP
-read -p "Enter your admin username (e.g. admin@example.com): " ADMIN_USER
+# Google login drops the domain: admin@example.com logs in as "admin".
+read -p "Enter your admin username, the part before @ (e.g. admin for admin@example.com): " ADMIN_USER
+ADMIN_USER="${ADMIN_USER%%@*}"
 read -p "Enter the Worker's Private IP (e.g. 172.31.y.y): " WORKER_IP
 
 cat > /opt/jupyterhub-pilot/user_mapping.json << EOF
@@ -101,6 +104,14 @@ cat > /opt/jupyterhub-pilot/hub_settings.json << EOF
 }
 EOF
 
+echo "🔐 5b. Generating the metrics agent token..."
+mkdir -p /etc/jupyterhub-pilot
+if [ ! -f /etc/jupyterhub-pilot/agent_token ]; then
+    openssl rand -hex 32 > /etc/jupyterhub-pilot/agent_token
+fi
+chown "${RUNNING_USER}:${RUNNING_USER}" /etc/jupyterhub-pilot/agent_token
+chmod 600 /etc/jupyterhub-pilot/agent_token
+
 echo "🌱 6. Seeding the SQLite database..."
 python3 /opt/jupyterhub-pilot/jupyterhub_pilot/seed_sqlite.py --db /var/lib/jupyterhub/jupyterhub_pilot_state.db --mapping /opt/jupyterhub-pilot/user_mapping.json
 # Ensure the DB file is writable by the ubuntu user (Hub runs as ubuntu, not root)
@@ -113,5 +124,10 @@ echo "⚠️  CRITICAL NEXT STEP: Copy the key below and paste it into the Worke
 echo ""
 cat /opt/jupyterhub-pilot/keys/worker.pub
 echo ""
-echo "Start the Hub anytime using:"
-echo "python3 -m jupyterhub -f /opt/jupyterhub-pilot/jupyterhub_config.py --JupyterHub.authenticator_class=dummy --DummyAuthenticator.password=test"
+echo "⚠️  Paste this metrics agent token into install_worker.sh on each Worker:"
+cat /etc/jupyterhub-pilot/agent_token
+echo ""
+echo "Edit hosted_domain in /opt/jupyterhub-pilot/hub_settings.json, then start the Hub with:"
+echo "export CLIENT_ID=... CLIENT_SECRET=... OAUTH_CALLBACK_URL=..."
+echo "export JUPYTERPILOT_AGENT_TOKEN=\$(cat /etc/jupyterhub-pilot/agent_token)"
+echo "python3 -m jupyterhub -f /opt/jupyterhub-pilot/jupyterhub_config.py"

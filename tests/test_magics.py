@@ -34,9 +34,23 @@ def _make_shell(history=None, ns=None):
     shell = MagicMock()
     shell.history_manager.input_hist_raw = history or []
     shell.user_ns = ns or {}
-    shell._output_cache = {}
-    shell._last_traceback = None
     return shell
+
+
+def _set_last_error(exc):
+    """Record *exc* the way IPython does when a cell raises."""
+    try:
+        raise exc
+    except BaseException as e:  # noqa: BLE001
+        sys.last_type, sys.last_value, sys.last_traceback = type(e), e, e.__traceback__
+
+
+@pytest.fixture(autouse=True)
+def _clear_last_error():
+    yield
+    for attr in ("last_traceback", "last_type", "last_value"):
+        if hasattr(sys, attr):
+            delattr(sys, attr)
 
 
 def _make_magics(history=None, ns=None, provider_response="x = 1"):
@@ -100,6 +114,11 @@ class TestGetContext:
         ctx = _get_context(shell)
         assert "my_var" in ctx
         assert "int" in ctx
+
+    def test_includes_cell_output_by_execution_count(self):
+        shell = _make_shell(history=["", "x = 1", "x + 1"], ns={"Out": {2: 2}})
+        ctx = _get_context(shell)
+        assert "# Output:\n# 2" in ctx
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -170,21 +189,24 @@ class TestCleanTraceback:
 class TestGetLastTraceback:
     def test_returns_none_with_no_error(self):
         shell = _make_shell(history=["x = 1"])
-        # Clear any real sys.last_traceback
-        for attr in ("last_traceback", "last_type", "last_value"):
-            if hasattr(sys, attr):
-                delattr(sys, attr)
         result = _get_last_traceback(shell)
         assert result is None
 
-    def test_reads_shell_last_traceback(self):
+    def test_reads_sys_last_traceback(self):
         shell = _make_shell(history=["1/0"])
-        shell._last_traceback = "ZeroDivisionError: division by zero"
+        _set_last_error(ZeroDivisionError("division by zero"))
         result = _get_last_traceback(shell)
         assert result is not None
         cell, tb = result
         assert "1/0" in cell
         assert "ZeroDivisionError" in tb
+
+    def test_skips_the_fix_cell_itself(self):
+        # IPython stores "%fix" in history before the magic runs.
+        shell = _make_shell(history=["", "1/0", "%fix"])
+        _set_last_error(ZeroDivisionError("division by zero"))
+        cell, _ = _get_last_traceback(shell)
+        assert cell == "1/0"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -225,17 +247,13 @@ class TestDoMagic:
 class TestFixMagic:
     def test_no_error_prints_message(self, capsys):
         m = _make_magics(history=["x = 1"])
-        m.shell._last_traceback = None
-        for attr in ("last_traceback", "last_type", "last_value"):
-            if hasattr(sys, attr):
-                delattr(sys, attr)
         m.fix("")
         out = capsys.readouterr().out
         assert "No recent error" in out
 
     def test_injects_fixed_code_on_error(self):
         m = _make_magics(history=["1/0"], provider_response="x = 0  # fixed")
-        m.shell._last_traceback = "ZeroDivisionError: division by zero"
+        _set_last_error(ZeroDivisionError("division by zero"))
         m.fix("")
         m.shell.set_next_input.assert_called_once()
         injected = m.shell.set_next_input.call_args[0][0]
@@ -243,7 +261,7 @@ class TestFixMagic:
 
     def test_fix_calls_provider_with_traceback(self):
         m = _make_magics(history=["bad_code()"])
-        m.shell._last_traceback = "NameError: bad_code"
+        _set_last_error(NameError("bad_code"))
         m.fix("")
         call_prompt = m.provider.generate.call_args[0][0]
         assert "NameError" in call_prompt or "bad_code" in call_prompt

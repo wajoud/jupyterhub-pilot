@@ -24,8 +24,9 @@ Usage
         --interval 2
 
 Environment variables (alternative to CLI flags):
-    JUPYTERPILOT_HUB_WS   – WebSocket URL of the Hub monitoring endpoint
-    JUPYTERPILOT_INTERVAL – Polling interval in seconds (default: 2)
+    JUPYTERPILOT_HUB_WS      – WebSocket URL of the Hub monitoring endpoint
+    JUPYTERPILOT_INTERVAL    – Polling interval in seconds (default: 2)
+    JUPYTERPILOT_AGENT_TOKEN – Shared secret; must match the Hub's value (required)
 """
 
 from __future__ import annotations
@@ -137,14 +138,21 @@ def _collect_metrics(prev_net: Dict[str, int], elapsed: float) -> Dict[str, Any]
 # ---------------------------------------------------------------------------
 
 
-async def _stream(hub_ws_url: str, interval: float) -> None:
+async def _stream(hub_ws_url: str, interval: float, token: str) -> None:
     """
     Connect to *hub_ws_url* and stream metrics every *interval* seconds.
     Reconnects with exponential back-off on failure.
     """
-    # Import websockets lazily so the module can be imported without it
+    # Import websockets lazily so the module can be imported without it.
+    # websockets >=14 moved the client to websockets.asyncio.client.connect;
+    # the top-level alias was kept for compat but removed in v15.
     try:
-        import websockets  # type: ignore
+        try:
+            from websockets.asyncio.client import connect as ws_connect  # type: ignore  # websockets >=14
+            headers_kw = "additional_headers"
+        except ImportError:
+            from websockets import connect as ws_connect  # type: ignore  # websockets 12/13
+            headers_kw = "extra_headers"
     except ImportError:
         log.error(
             "The 'websockets' package is required for the metrics agent. "
@@ -160,7 +168,8 @@ async def _stream(hub_ws_url: str, interval: float) -> None:
 
     while True:
         try:
-            async with websockets.connect(hub_ws_url, ping_interval=20) as ws:
+            auth = {headers_kw: {"Authorization": f"Bearer {token}"}}
+            async with ws_connect(hub_ws_url, ping_interval=20, **auth) as ws:
                 log.info("Connected to Hub monitoring endpoint.")
                 backoff = 1.0  # reset on successful connection
 
@@ -217,8 +226,11 @@ def main() -> None:
 
     if not args.hub:
         parser.error("Please supply --hub <WS_URL> or set JUPYTERPILOT_HUB_WS env var.")
+    token = os.environ.get("JUPYTERPILOT_AGENT_TOKEN", "")
+    if not token:
+        parser.error("Set JUPYTERPILOT_AGENT_TOKEN (same value as on the Hub).")
 
-    asyncio.run(_stream(args.hub, args.interval))
+    asyncio.run(_stream(args.hub, args.interval, token))
 
 
 if __name__ == "__main__":

@@ -32,12 +32,13 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Framework :: Jupyter",
 ]
 dependencies = [
     # Core dependencies used by both hub and worker
-    "requests>=2.31.0",
+    "requests>=2.32.0",
 ]
 
 [project.urls]
@@ -51,22 +52,22 @@ Repository = "https://github.com/wajoud/jupyterhub-pilot.git"
 [project.optional-dependencies]
 # Hub-side dependencies: pip install jupyterhub_pilot[hub]
 hub = [
-    "jupyterhub",
-    "paramiko>=3.4.0",
+    "jupyterhub>=5.0.0",
+    "paramiko>=3.4.0,<6.0",
     "websockets>=12.0",
 ]
 # Worker-side dependencies: pip install jupyterhub_pilot[worker]
 worker = [
-    "jupyterhub",
-    "notebook",
-    "psutil>=5.9.0",
+    "jupyterhub>=5.0.0",
+    "notebook>=7.0.0",
+    "psutil>=6.0.0",
     "websockets>=12.0",
 ]
 # Install AI features: pip install jupyterhub_pilot[ai]
 ai = [
-    "ipython>=8.0.0",
-    "litellm>=1.30.0",
-    "mcp>=1.0.0",
+    "ipython>=8.26.0",
+    "litellm>=1.55.0",
+    "mcp>=1.0.0,<3.0",
 ]
 dev = [
     "black",
@@ -77,6 +78,7 @@ dev = [
     "flake8",
     "types-requests",
     "types-paramiko",
+    "tornado",        # needed by test_config.py → jupyterhub_config → monitoring_handler
 ]
 
 [tool.setuptools.packages.find]

@@ -1,0 +1,8 @@
+{# Adds the Monitoring link to JupyterHub's nav bar. "templates/" is JupyterHub's own copy. #}
+{% extends "templates/page.html" %}
+{% block nav_bar_left_items %}
+  {{ super() }}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ base_url }}monitoring">📊 Monitoring</a>
+  </li>
+{% endblock nav_bar_left_items %}

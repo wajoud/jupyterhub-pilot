@@ -4,7 +4,12 @@
 # infrastructure (spawner, session_store, vault_client, etc.) can be imported
 # without IPython being installed.
 
-__version__ = "0.2.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("jupyterhub-pilot")
+except PackageNotFoundError:  # running from a source checkout
+    __version__ = "0+unknown"
 
 
 def load_ipython_extension(ipython):
