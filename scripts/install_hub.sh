@@ -69,7 +69,9 @@ chmod 600 /opt/jupyterhub-pilot/keys/worker
 # Interactive configuration
 echo "⚙️  5. Configuring JupyterHub-Pilot"
 read -p "Enter the Hub's Private IP (e.g. 172.31.x.x): " HUB_IP
-read -p "Enter your admin username (e.g. admin@example.com): " ADMIN_USER
+# Google login drops the domain: admin@example.com logs in as "admin".
+read -p "Enter your admin username, the part before @ (e.g. admin for admin@example.com): " ADMIN_USER
+ADMIN_USER="${ADMIN_USER%%@*}"
 read -p "Enter the Worker's Private IP (e.g. 172.31.y.y): " WORKER_IP
 
 cat > /opt/jupyterhub-pilot/user_mapping.json << EOF

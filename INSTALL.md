@@ -100,7 +100,7 @@ Fill in your values — replace `10.0.0.10` with your **Hub's private IP**:
   "hub_port":      8000,
 
   "hosted_domain": "your-company.com",
-  "admin_users":   ["admin@your-company.com"],
+  "admin_users":   ["admin"],
 
   "mapping_file":  "user_mapping.json",
   "db_path":       "/var/lib/jupyterhub/jupyterhub_pilot_state.db",
@@ -115,6 +115,8 @@ Fill in your values — replace `10.0.0.10` with your **Hub's private IP**:
 }
 ```
 
+> ⚠️ `admin_users` takes the part of the email **before the `@`**: with `hosted_domain` set, Google login turns `admin@your-company.com` into the username `admin`. A full email here never gets admin rights.
+
 ### 1d. Generate the Hub SSH keypair
 
 The Hub needs an SSH key to connect to Worker EC2s. This key is dedicated to JupyterHub-Pilot — do not reuse your personal key.
@@ -123,6 +125,14 @@ The Hub needs an SSH key to connect to Worker EC2s. This key is dedicated to Jup
 sudo mkdir -p /opt/jupyterhub-pilot/keys
 sudo ssh-keygen -t ed25519 -f /opt/jupyterhub-pilot/keys/hub_worker -N ""
 sudo chmod 600 /opt/jupyterhub-pilot/keys/hub_worker
+# The Hub runs as you (not root), so it must own its key
+sudo chown $(whoami):$(whoami) /opt/jupyterhub-pilot/keys/hub_worker /opt/jupyterhub-pilot/keys/hub_worker.pub
+
+# Shared secret for the metrics agents (Step 6); the Hub needs it at start
+sudo mkdir -p /etc/jupyterhub-pilot
+[ -f /etc/jupyterhub-pilot/agent_token ] || openssl rand -hex 32 | sudo tee /etc/jupyterhub-pilot/agent_token > /dev/null
+sudo chown $(whoami):$(whoami) /etc/jupyterhub-pilot/agent_token
+sudo chmod 600 /etc/jupyterhub-pilot/agent_token
 
 echo ""
 echo "=== Hub Public Key (copy this — you will need it in Step 3) ==="
@@ -290,14 +300,19 @@ Expected output:
 
 ### Adding more workers later (no restart needed)
 
-```bash
-python3 -c "
-from jupyterhub_pilot.session_store import SessionStore
-s = SessionStore('/var/lib/jupyterhub/jupyterhub_pilot_state.db')
-s.set_mapping('group_c', '10.0.1.30', '/opt/jupyterhub-pilot/keys/hub_worker', 'ubuntu')
-print('group_c added — no hub restart needed!')
-"
+Add the new worker to `/opt/jupyterhub-pilot/user_mapping.json` the same way as in 4a:
+
+```json
+  "group_c": {
+    "server_ip":      "10.0.1.30",
+    "server_ssh_key": "/opt/jupyterhub-pilot/keys/hub_worker",
+    "admin_ssh_user": "ubuntu"
+  }
 ```
+
+Then re-run the seed command from 4b. It is safe to re-run: existing groups are updated, not duplicated. The Hub picks up the new group on the next server start, so no restart is needed.
+
+> Leave out `ssh_user` unless you want every user of the group to share one Linux account. Without it, each user gets their own account on the worker (created through `admin_ssh_user`).
 
 ---
 
@@ -328,6 +343,20 @@ Open `https://hub.example.com` and:
 
 ### 5b. Run as a persistent systemd service (production)
 
+Put the secrets the Hub needs in an env file only root can read:
+
+```bash
+sudo tee /etc/jupyterhub-pilot/hub.env > /dev/null << EOF
+CLIENT_ID=<google-client-id>
+CLIENT_SECRET=<google-client-secret>
+OAUTH_CALLBACK_URL=https://hub.example.com/hub/oauth_callback
+JUPYTERPILOT_AGENT_TOKEN=$(sudo cat /etc/jupyterhub-pilot/agent_token)
+EOF
+sudo chmod 600 /etc/jupyterhub-pilot/hub.env
+```
+
+Create the service. It runs as `ubuntu`, which owns the SSH key and the SQLite DB; change `User=` if your Hub user differs:
+
 ```bash
 sudo tee /etc/systemd/system/jupyterhub.service > /dev/null << 'INI'
 [Unit]
@@ -335,7 +364,9 @@ Description=JupyterHub
 After=network.target
 
 [Service]
+User=ubuntu
 WorkingDirectory=/opt/jupyterhub-pilot
+EnvironmentFile=/etc/jupyterhub-pilot/hub.env
 ExecStart=/usr/bin/python3 -m jupyterhub -f /opt/jupyterhub-pilot/jupyterhub_config.py
 Restart=always
 RestartSec=10
