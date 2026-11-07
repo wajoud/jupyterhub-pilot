@@ -100,7 +100,7 @@ def mock_spawner(store) -> CustomSpawner:
     spawner_module._store = store
 
     # Stub _get_server_info to avoid real file I/O
-    instance._get_server_info = MagicMock(
+    instance._get_server_info = MagicMock(  # type: ignore[method-assign]
         return_value={
             "server_ip": "192.168.1.100",
             "server_ssh_key": "/path/to/key.pem",

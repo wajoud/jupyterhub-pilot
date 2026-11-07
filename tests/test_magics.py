@@ -9,8 +9,7 @@ Uses a minimal fake IPython shell — no real kernel needed.
 from __future__ import annotations
 
 import sys
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

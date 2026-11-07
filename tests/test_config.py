@@ -8,7 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 # Import builtins config_mock from conftest/builtins
 import builtins
 
-config_mock = builtins.get_config()
+config_mock = builtins.get_config()  # type: ignore[attr-defined]
 
 # We need to make sure hub_settings.json exists or is mocked during import of jupyterhub_config.
 # Since jupyterhub_config.py reads from hub_settings.json, let's mock open specifically for it or

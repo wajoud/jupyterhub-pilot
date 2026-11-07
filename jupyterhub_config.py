@@ -25,7 +25,7 @@ from spawner import CustomSpawner, worker_ip_for_group
 # -------------------------------------------------
 # Base Config
 # -------------------------------------------------
-c = get_config()  # noqa: F821
+c = get_config()  # type: ignore[name-defined]  # noqa: F821  (JupyterHub injects it)
 
 c.Application.log_level = "INFO"
 

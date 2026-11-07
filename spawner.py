@@ -114,6 +114,7 @@ def worker_ip_for_group(group: str) -> Optional[str]:
     row = _store.get_mapping(group)  # returns None on DB errors: fail closed
     return row["server_ip"] if row else None
 
+
 # PERF FIX: cache the result of ping() so start/stop/poll don't hit SQLite
 # twice per operation.  The TTL of 5 s means a recovered DB is re-detected
 # quickly without hammering it on every spawner call.

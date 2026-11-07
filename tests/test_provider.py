@@ -8,11 +8,8 @@ All HTTP calls are mocked — no real Ollama or cloud API needed.
 
 from __future__ import annotations
 
-import json
 import os
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from jupyterhub_pilot.provider import (
     LLMProvider,

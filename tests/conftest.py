@@ -61,4 +61,4 @@ sys.modules["paramiko"] = MagicMock()
 import builtins
 
 config_mock = MagicMock()
-builtins.get_config = lambda: config_mock
+builtins.get_config = lambda: config_mock  # type: ignore[attr-defined]
