@@ -6,9 +6,9 @@
 
 [![Python](https://img.shields.io/badge/Python-3.9%2B-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![JupyterHub](https://img.shields.io/badge/JupyterHub-5.x-f37726?style=flat-square&logo=jupyter&logoColor=white)](https://jupyterhub.readthedocs.io/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=flat-square)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-123%20passing-22c55e?style=flat-square)](tests/)
-[![AWS EC2](https://img.shields.io/badge/AWS-EC2%20Ready-FF9900?style=flat-square&logo=amazon-aws&logoColor=white)](AWS_EC2_DEPLOYMENT.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=flat-square)](https://github.com/wajoud/jupyterhub-pilot/blob/main/LICENSE)
+[![Tests](https://img.shields.io/badge/Tests-123%20passing-22c55e?style=flat-square)](https://github.com/wajoud/jupyterhub-pilot/tree/main/tests)
+[![AWS EC2](https://img.shields.io/badge/AWS-EC2%20Ready-FF9900?style=flat-square&logo=amazon-aws&logoColor=white)](https://github.com/wajoud/jupyterhub-pilot/blob/main/AWS_EC2_DEPLOYMENT.md)
 
 </div>
 
@@ -95,7 +95,7 @@ You need:
 
 ## Install: Hub and first worker
 
-Full walkthroughs: [AWS EC2 Deployment Guide](AWS_EC2_DEPLOYMENT.md) and [Installation Guide](INSTALL.md). The short version:
+Full walkthroughs: [AWS EC2 Deployment Guide](https://github.com/wajoud/jupyterhub-pilot/blob/main/AWS_EC2_DEPLOYMENT.md) and [Installation Guide](https://github.com/wajoud/jupyterhub-pilot/blob/main/INSTALL.md). The short version:
 
 ### 1. Hub VM
 
@@ -365,7 +365,7 @@ Load the magics in a notebook:
 | `%review` | Reviews recent cells for bugs and style |
 | `%rework <instruction>` | Rewrites the last cell as instructed |
 
-The LLM backend is set in `~/.jupyterhub-pilot/config.json` (per user) or `/etc/jupyterhub-pilot/config.json` (whole worker). The default is a local Ollama at `http://localhost:11434`. Setup, auto-loading for all users and cloud/MCP backends: [AI Magic Commands](docs/AI_MAGICS.md).
+The LLM backend is set in `~/.jupyterhub-pilot/config.json` (per user) or `/etc/jupyterhub-pilot/config.json` (whole worker). The default is a local Ollama at `http://localhost:11434`. Setup, auto-loading for all users and cloud/MCP backends: [AI Magic Commands](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/AI_MAGICS.md).
 
 ---
 
@@ -377,7 +377,7 @@ Open `https://hub.example.com/hub/monitoring` (or click **📊 Monitoring** in t
 - **Admins** see every worker. **Users** see only the workers of their own team.
 - A worker appears when its metrics agent connects with the right token and disappears when the agent stops.
 
-Agent status, on a worker: `sudo systemctl status jupyterhub_pilot-metrics`. More: [Monitoring](docs/MONITORING.md).
+Agent status, on a worker: `sudo systemctl status jupyterhub_pilot-metrics`. More: [Monitoring](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/MONITORING.md).
 
 ---
 
@@ -397,7 +397,7 @@ Agent status, on a worker: `sudo systemctl status jupyterhub_pilot-metrics`. Mor
 | `mapping_file` | JSON fallback for team→VM mappings, used if SQLite is unreachable |
 | `db_path` | SQLite state DB |
 | `resource_limits` | `memory_max` (e.g. `"1G"`) and `cpu_quota` (e.g. `"50%"`) per notebook server; `null` turns limits off |
-| `vault_enabled`, `vault_secret_path` | Vault secret injection; see [Security](docs/SECURITY.md) |
+| `vault_enabled`, `vault_secret_path` | Vault secret injection; see [Security](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/SECURITY.md) |
 
 Environment variables:
 
@@ -429,7 +429,7 @@ Environment variables:
 | Server starts then dies | Read the user's notebook log on the worker (table above) |
 | Dashboard shows no workers | Agent not running, wrong token, or the team's `server_ip` is not the worker's private IP |
 
-More cases: [Installation Guide → Troubleshooting](INSTALL.md#-troubleshooting).
+More cases: [Installation Guide → Troubleshooting](https://github.com/wajoud/jupyterhub-pilot/blob/main/INSTALL.md#-troubleshooting).
 
 ---
 
@@ -459,13 +459,13 @@ jupyterhub-pilot/
 
 ## More documentation
 
-- [AWS EC2 Deployment Guide](AWS_EC2_DEPLOYMENT.md): end-to-end on AWS
-- [Installation Guide](INSTALL.md): detailed manual setup
-- [Architecture & EC2 Routing](docs/ARCHITECTURE.md)
-- [Security, Isolation & RBAC](docs/SECURITY.md)
-- [AI Magic Commands](docs/AI_MAGICS.md)
-- [Live Monitoring Dashboard](docs/MONITORING.md)
-- [Tests](tests/README.md)
+- [AWS EC2 Deployment Guide](https://github.com/wajoud/jupyterhub-pilot/blob/main/AWS_EC2_DEPLOYMENT.md): end-to-end on AWS
+- [Installation Guide](https://github.com/wajoud/jupyterhub-pilot/blob/main/INSTALL.md): detailed manual setup
+- [Architecture & EC2 Routing](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/ARCHITECTURE.md)
+- [Security, Isolation & RBAC](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/SECURITY.md)
+- [AI Magic Commands](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/AI_MAGICS.md)
+- [Live Monitoring Dashboard](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/MONITORING.md)
+- [Tests](https://github.com/wajoud/jupyterhub-pilot/blob/main/tests/README.md)
 
 ---
 

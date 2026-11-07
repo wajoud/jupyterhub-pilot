@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jupyterhub-pilot"
-version = "0.3.0"
+version = "0.3.1"
 description = "Agentic AI coding partner for JupyterHub and IPython"
-readme = "PYPI_README.md"
+readme = "README.md"
 requires-python = ">=3.9"
 license = {file = "LICENSE"}
 authors = [
-    {name = "Wajoud", email = "wajoud@example.com"}
+    {name = "Wajoud", email = "wajoudnoorani59@gmail.com"}
 ]
 keywords = [
     "jupyter",
