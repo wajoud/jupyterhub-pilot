@@ -38,7 +38,8 @@ Released in 0.4.0. Verified on 2026-11-08 in ap-south-1 (Ubuntu 26.04 Arm, 1 Hub
 - [x] Docs: default EC2 root disk (~8 GB) is half full after the worker install. Recommend 20–30 GiB per worker and show how to grow the volume.
 - [x] The first metrics-agent connect after a Hub start can hit `404` (agent connects before the Hub's routes are added); it recovers on the next retry, but backoff could reach 60 s. Backoff now caps at 10 s.
 - [x] A stopped worker left its users' servers listed as running forever (`poll()` treated every failed SSH check as a blip), and Stop Server failed for them. A worker unreachable for 5 minutes now marks its servers stopped.
-- [ ] Verify on EC2: stop a worker, servers show stopped after ~5 min; start it, users can start again; dashboard card has no overlap.
+- [x] Verified on EC2 (2026-11-08): stop a worker, its card leaves the dashboard at once and its servers show stopped after ~5 min; start it, the card returns and users can start again.
+- [ ] Check the dashboard card: the CPU history line no longer covers the "Last update" text.
 
 ## Test Amazon Linux 2023 support end to end
 
@@ -63,4 +64,15 @@ Done on branch `feature/pip-install` (release as 0.5.0).
 - [x] `jupyterhub-pilot` command: `install-hub`, `install-worker`, `add-worker`, `load-test`. One script per role for Ubuntu and Amazon Linux.
 - [x] Metrics agent and seeding run as `python -m jupyterhub_pilot.…`; no `get_port.py` (inline `python3 -c`).
 - [x] Docs (README, AWS guide, INSTALL.md, MONITORING.md).
-- [ ] Verify on EC2 from PyPI (or `pip install "jupyterhub-pilot[hub] @ git+https://github.com/wajoud/jupyterhub-pilot@feature/pip-install"` before the release).
+- [x] Verified on EC2 from PyPI (0.5.1), see below.
+
+## 2026-11-08 test: 0.5.1 from PyPI, 1 Hub + 4 workers
+
+ap-south-1, Ubuntu 26.04 Arm, `t4g.small` everywhere, JupyterHub 6.2.0, Notebook 7.6.5, limit `1G`/`50%`, test login behind Caddy `tls internal`. Steps are in README → Test a cluster.
+
+- [x] `install-hub`, `install-worker` (answers piped in), `add-worker` for 4 teams.
+- [x] 8 users, no workload: 8/8 ready, median 7.6 s, max 9.3 s.
+- [x] 20 users, 300 MB + 60 s CPU each: 20/20 ready, median 8.8 s, max 13.3 s, 20 kernels finished.
+- [x] 1200 MB kernel against `1G`: kernel killed, notebook server kept running.
+- [x] Worker stopped: servers marked stopped after ~5 min; worker restarted, users start again.
+- Docs gaps found and fixed in PR #14: `apt update` before pip, public IP + local check for no-domain Caddy, admin uses the admin password, no-prompt `install-worker`, per-user limit how-to.
