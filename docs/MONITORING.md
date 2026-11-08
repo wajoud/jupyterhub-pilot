@@ -71,11 +71,22 @@ What you see per worker EC2:
 - **RAM:** used / total / percent
 - **Disk:** used / total / percent (root filesystem)
 - **Network:** upload/download Mbps (rolling 2-second rate)
+- **Worker:** core count and uptime
+
+Per notebook server on that worker (one row per user):
+- **CPU:** cores in use, compared with the user's CPU limit (`cpu_quota`)
+- **Memory:** used, compared with the user's memory limit (`memory_max`). The bar turns red near the limit, where the kernel kills the user's processes.
+- **Kernels**, **home folder size** (refreshed every minute) and **server uptime**
+
+Limits and memory come from the server's cgroup (the `systemd-run` scope the spawner creates). The user is taken from the server's `JUPYTERHUB_USER`, so rows are right even when a team shares one Linux account.
+
+At the top: number of workers, notebook servers, average CPU and total memory.
 
 ### Access control
 
 - All authenticated JupyterHub users can open the dashboard.
 - Regular users see **only** the workers their groups are mapped to (`server_ip` in the team mapping).
-- Admins see **all** connected workers across the entire cluster.
+- Admins see **all** connected workers across the entire cluster, with every user's row.
+- Regular users see their workers' totals but **only their own** usage row, not their teammates'.
 - A worker is matched by the IP the Hub sees for its agent's connection, so `server_ip` must be the worker's **private** IP (the one the agent connects from).
 - When an agent disconnects, its worker disappears from the dashboard.

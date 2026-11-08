@@ -36,11 +36,11 @@ def _agent(auth=None, ip="10.0.1.5"):
     return h
 
 
-def _browser(admin, groups):
+def _browser(admin, groups, name="someone"):
     b = mh.BrowserWebSocketHandler.__new__(mh.BrowserWebSocketHandler)
     b.initialize(worker_ip_for_group=MAPPING.get)
     b.current_user = SimpleNamespace(
-        admin=admin, groups=[SimpleNamespace(name=g) for g in groups]
+        name=name, admin=admin, groups=[SimpleNamespace(name=g) for g in groups]
     )
     b.write_message = MagicMock()
     return b
@@ -121,3 +121,30 @@ def test_agent_disconnect_removes_worker():
 
     assert "w-alpha" not in mh._WORKER_SNAPSHOTS
     assert _messages(admin, "gone") == [{"type": "gone", "worker": "w-alpha"}]
+
+
+# ── Per-user usage rows ───────────────────────────────────────────────────────
+
+USERS = [{"name": "alice", "mem_mb": 300}, {"name": "carol", "mem_mb": 200}]
+
+
+def test_users_see_only_their_own_usage_row_admins_see_everyone():
+    alice = _browser(False, ["team_alpha"], name="alice")
+    admin = _browser(True, [], name="boss")
+    alice.open()
+    admin.open()
+    _send("10.0.1.5", "w-alpha", users=USERS)
+
+    assert _messages(alice, "snapshot")[0]["data"]["users"] == [USERS[0]]
+    assert _messages(admin, "snapshot")[0]["data"]["users"] == USERS
+    # A later browser gets the same filtering in its init message
+    late = _browser(False, ["team_alpha"], name="carol")
+    late.open()
+    assert _messages(late, "init")[0]["workers"]["w-alpha"]["users"] == [USERS[1]]
+
+
+def test_gone_message_is_not_rewritten_for_non_admins():
+    alice = _browser(False, ["team_alpha"], name="alice")
+    alice.open()
+    _send("10.0.1.5", "w-alpha", users=USERS).on_close()
+    assert _messages(alice, "gone") == [{"type": "gone", "worker": "w-alpha"}]

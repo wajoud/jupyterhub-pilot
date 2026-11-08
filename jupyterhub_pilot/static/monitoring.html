@@ -374,8 +374,95 @@
   }
 
   /* ── Responsive ──────────────────────────────────────────────── */
+  /* ── Fleet summary ───────────────────────────────────────────── */
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin: -16px 0 24px;
+  }
+  .summary-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+  }
+  .summary-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .summary-value {
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: 700;
+    margin-top: 4px;
+  }
+
+  .worker-meta {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  /* ── Per-user table ──────────────────────────────────────────── */
+  .users-section {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .users-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 6px;
+  }
+  .users-table th {
+    text-align: left;
+    font-size: 10px;
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .users-table td {
+    padding: 6px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    vertical-align: middle;
+  }
+  .users-table td.user-name {
+    font-family: var(--font);
+    font-weight: 600;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .users-table .cell-sub { color: var(--text-muted); font-size: 10px; }
+  .mini-track {
+    height: 4px;
+    background: var(--surface2);
+    border-radius: 2px;
+    margin-top: 3px;
+    min-width: 60px;
+  }
+  .mini-fill { height: 100%; border-radius: 2px; }
+  .users-empty {
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 8px 0 0;
+  }
+
   @media (max-width: 700px) {
     #workers-grid { grid-template-columns: 1fr; }
+    .summary      { grid-template-columns: repeat(2, 1fr); }
+    .users-table .hide-narrow { display: none; }
     .stats-grid   { grid-template-columns: repeat(2, 1fr); }
     .net-row      { grid-template-columns: 1fr; }
   }
@@ -397,6 +484,13 @@
 <main>
   <div class="page-title">Live Infrastructure Monitoring</div>
   <div class="page-subtitle" id="subtitle">Connecting to Hub…</div>
+
+  <div class="summary" id="summary">
+    <div class="summary-box"><div class="summary-label">Workers</div><div class="summary-value" id="sum-workers">—</div></div>
+    <div class="summary-box"><div class="summary-label">Notebook servers</div><div class="summary-value" id="sum-users">—</div></div>
+    <div class="summary-box"><div class="summary-label">Avg CPU</div><div class="summary-value color-cpu" id="sum-cpu">—</div></div>
+    <div class="summary-box"><div class="summary-label">Memory used</div><div class="summary-value color-mem" id="sum-mem">—</div></div>
+  </div>
 
   <div id="no-workers" style="display:none;">
     <div class="icon">🖥️</div>
@@ -455,6 +549,7 @@ function createCard(hostname) {
       <div>
         <div class="worker-name" id="wname-${h}">${h}</div>
         <div class="worker-ip"  id="wip-${h}">—</div>
+        <div class="worker-meta" id="wmeta-${h}"></div>
       </div>
       <div class="worker-badge" id="badge-${h}">LIVE</div>
     </div>
@@ -531,6 +626,12 @@ function createCard(hostname) {
             <div class="net-total" id="ndowntot-${h}">—</div>
           </div>
         </div>
+      </div>
+
+      <!-- Per-user usage -->
+      <div class="users-section">
+        <div class="chart-label" id="ulabel-${h}">Notebook servers</div>
+        <div id="users-${h}"><div class="users-empty">No notebook servers running</div></div>
       </div>
 
       <!-- CPU Sparkline -->
@@ -614,15 +715,72 @@ function fmtTotal(bytes) {
   return mb.toFixed(1) + ' MB total';
 }
 
+function fmtDur(s) {
+  if (s == null) return '—';
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  if (d) return `${d}d ${h}h`;
+  if (h) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function miniBar(pct) {
+  const p = Math.max(0, Math.min(100, pct || 0));
+  return `<div class="mini-track"><div class="mini-fill" style="width:${p}%;background:${colorForPct(p)}"></div></div>`;
+}
+
+// One row per notebook server. Bars compare usage with the user's own limit
+// (the server's cgroup) when there is one, else with the whole worker.
+function usersHtml(users, workerMemMb) {
+  if (!users || !users.length) return '<div class="users-empty">No notebook servers running</div>';
+  const rows = users.map(u => {
+    const usedCorePct = (u.cpu_cores || 0) * 100;            // % of one core
+    const cpuPct = u.cpu_limit_pct ? usedCorePct / u.cpu_limit_pct * 100 : u.cpu_percent;
+    const cpuSub = u.cpu_limit_pct ? `of ${(u.cpu_limit_pct / 100).toFixed(2)} core limit` : 'of worker';
+    const memCap = u.mem_limit_mb || workerMemMb;
+    const memPct = memCap ? u.mem_mb / memCap * 100 : 0;
+    const memSub = u.mem_limit_mb ? `of ${fmtBytes(u.mem_limit_mb)} limit` : 'no limit';
+    const home = u.home_bytes == null ? '—' : fmtBytes(u.home_bytes / 1048576);
+    const who = u.linux_user && u.linux_user !== u.name ? `<div class="cell-sub">as ${esc(u.linux_user)}</div>` : '';
+    return `<tr>
+      <td class="user-name" title="${esc(u.name)}">${esc(u.name)}${who}</td>
+      <td>${(u.cpu_cores || 0).toFixed(2)} cores<div class="cell-sub">${esc(cpuSub)}</div>${miniBar(cpuPct)}</td>
+      <td>${fmtBytes(u.mem_mb)}<div class="cell-sub">${esc(memSub)}</div>${miniBar(memPct)}</td>
+      <td>${esc(u.kernels)}</td>
+      <td class="hide-narrow">${home}</td>
+      <td class="hide-narrow">${fmtDur(u.uptime_s)}</td>
+    </tr>`;
+  }).join('');
+  return `<table class="users-table">
+    <thead><tr><th>User</th><th>CPU</th><th>Memory</th><th>Kernels</th>
+      <th class="hide-narrow">Home</th><th class="hide-narrow">Up</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+function updateSummary() {
+  const snaps = Object.values(workers).map(w => w.snap).filter(Boolean);
+  const n = snaps.length;
+  const used = snaps.reduce((a, s) => a + s.memory.used_mb, 0);
+  const total = snaps.reduce((a, s) => a + s.memory.total_mb, 0);
+  document.getElementById('sum-workers').textContent = n;
+  document.getElementById('sum-users').textContent = snaps.reduce((a, s) => a + (s.users || []).length, 0);
+  document.getElementById('sum-cpu').textContent =
+    n ? (snaps.reduce((a, s) => a + s.cpu.percent, 0) / n).toFixed(1) + '%' : '—';
+  document.getElementById('sum-mem').textContent = n ? `${fmtBytes(used)} / ${fmtBytes(total)}` : '—';
+}
+
 function updateCard(hostname, snap) {
   if (!workers[hostname]) createCard(hostname);
   const w = workers[hostname];
+  w.snap = snap;
 
   const cpu   = snap.cpu;
   const mem   = snap.memory;
   const disk  = snap.disk;
   const net   = snap.network;
   const badge = cpu.percent >= 90 ? 'crit' : cpu.percent >= 70 ? 'warn' : '';
+  const usersMarkup = usersHtml(snap.users, mem.total_mb);
+  const nUsers = (snap.users || []).length;
+  const metaStr = `${cpu.core_count} cores` + (snap.uptime_s != null ? ` · up ${fmtDur(snap.uptime_s)}` : '');
 
   // PERF FIX: pre-compute all formatted values once, then apply inside a
   // single requestAnimationFrame to avoid multiple forced reflows.
@@ -678,6 +836,12 @@ function updateCard(hostname, snap) {
     // Timestamp
     document.getElementById(`ls-${hostname}`).textContent = ts;
 
+    // Worker details + per-user usage
+    document.getElementById(`wmeta-${hostname}`).textContent = metaStr;
+    document.getElementById(`ulabel-${hostname}`).textContent = `Notebook servers (${nUsers})`;
+    document.getElementById(`users-${hostname}`).innerHTML = usersMarkup;
+    updateSummary();
+
     // Hide placeholder
     document.getElementById('no-workers').style.display = 'none';
   });
@@ -727,6 +891,7 @@ function connect() {
       if (Object.keys(msg.workers).length === 0) {
         document.getElementById('no-workers').style.display = '';
       }
+      updateSummary();
     } else if (msg.type === 'snapshot') {
       updateCard(msg.worker, msg.data);
     } else if (msg.type === 'gone') {
@@ -737,6 +902,7 @@ function connect() {
         delete workers[msg.worker];
         document.getElementById(`card-${CSS.escape(msg.worker)}`)?.remove();
       }
+      updateSummary();
       if (Object.keys(workers).length === 0) {
         document.getElementById('no-workers').style.display = '';
       }

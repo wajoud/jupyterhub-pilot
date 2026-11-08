@@ -415,7 +415,7 @@ The LLM backend is set in `~/.jupyterhub-pilot/config.json` (per user) or `/etc/
 Open `https://hub.example.com/hub/monitoring` (or click **📊 Monitoring** in the Hub's nav bar).
 
 - You must be logged in.
-- **Admins** see every worker. **Users** see only the workers of their own team.
+- **Admins** see every worker and every user's CPU, memory (against their limit), kernels and home-folder size. **Users** see only their own team's workers, and only their own usage row.
 - A worker appears when its metrics agent connects with the right token and disappears when the agent stops.
 
 Agent status, on a worker: `sudo systemctl status jupyterhub_pilot-metrics`. More: [Monitoring](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/MONITORING.md).
