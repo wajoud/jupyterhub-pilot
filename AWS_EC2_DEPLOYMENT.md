@@ -30,7 +30,7 @@ Google login only accepts an **HTTPS** callback on a **real domain name** — ne
 SSH into your Hub instance and run:
 
 ```bash
-sudo apt install -y python3-pip
+sudo apt update && sudo apt install -y python3-pip
 sudo pip3 install --break-system-packages --ignore-installed "jupyterhub-pilot[hub]"
 sudo jupyterhub-pilot install-hub
 ```
@@ -49,7 +49,7 @@ When prompted, enter:
 SSH into your Worker instance in a new terminal tab and run:
 
 ```bash
-sudo apt install -y python3-pip
+sudo apt update && sudo apt install -y python3-pip
 sudo pip3 install --break-system-packages --ignore-installed "jupyterhub-pilot[worker,ai]"
 sudo jupyterhub-pilot install-worker
 ```
@@ -60,6 +60,20 @@ When prompted:
 - Enter the **OS admin username** (e.g. `ubuntu`) — this grants the Hub SSH access to provision the worker
 - Paste the **SSH public key** printed at the end of the Hub setup
 - Enter the **Hub's Private IP**
+- Paste the **metrics agent token** printed at the end of the Hub setup (`sudo cat /etc/jupyterhub-pilot/agent_token` on the Hub)
+
+Or answer all four in one paste, which is handy for several workers (same block on each):
+
+```bash
+sudo apt update && sudo apt install -y python3-pip
+sudo pip3 install --break-system-packages --ignore-installed "jupyterhub-pilot[worker,ai]"
+printf '%s\n' ubuntu \
+  "<HUB_PUBLIC_SSH_KEY>" \
+  <HUB_PRIVATE_IP> \
+  <AGENT_TOKEN> \
+  | sudo jupyterhub-pilot install-worker
+hostname -I     # this worker's private IP, for add-worker on the Hub
+```
 
 ---
 
