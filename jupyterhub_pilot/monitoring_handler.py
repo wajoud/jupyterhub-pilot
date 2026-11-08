@@ -37,8 +37,8 @@ Usage (wire in jupyterhub_config.py)
     ]
 
 Performance notes (PERF FIX):
-  - Raw message bytes are forwarded to browser clients without JSON
-    parse + re-serialise. Only a thin envelope wrapper is built once.
+  - Each update is JSON-encoded once for all admins; non-admin browsers get
+    a per-user copy that lists only their own usage row.
   - Dead client cleanup uses discard() inline instead of building a
     temporary set and calling difference_update().
 """
@@ -124,16 +124,7 @@ class AgentWebSocketHandler(WebSocketHandler):
         self.hostname = hostname
         _WORKER_SNAPSHOTS[hostname] = snapshot
 
-        # PERF FIX: build the broadcast envelope *once* (not per client).
-        envelope = json.dumps(
-            {
-                "type": "snapshot",
-                "worker": hostname,
-                "data": snapshot,
-            }
-        )
-
-        _broadcast(snapshot, envelope)
+        _broadcast(snapshot, {"type": "snapshot", "worker": hostname, "data": snapshot})
 
     def on_close(self) -> None:
         log.info(
@@ -142,16 +133,24 @@ class AgentWebSocketHandler(WebSocketHandler):
         # Drop the worker so the dashboard does not show stale numbers forever.
         snapshot = _WORKER_SNAPSHOTS.pop(getattr(self, "hostname", None) or "", None)
         if snapshot is not None:
-            _broadcast(snapshot, json.dumps({"type": "gone", "worker": self.hostname}))
+            _broadcast(snapshot, {"type": "gone", "worker": self.hostname})
 
 
-def _broadcast(snapshot: Dict[str, Any], envelope: str) -> None:
-    """Send *envelope* to every browser allowed to see *snapshot*'s worker."""
+def _broadcast(snapshot: Dict[str, Any], message: Dict[str, Any]) -> None:
+    """Send *message* to every browser allowed to see *snapshot*'s worker.
+
+    Encoded once for admins; a message carrying the snapshot (``"data"``) is
+    re-encoded per non-admin so it lists only that user's own usage.
+    """
+    full = json.dumps(message)
     for client in list(_BROWSER_CLIENTS):
         if not client.can_see(snapshot):
             continue
         try:
-            client.write_message(envelope)
+            if "data" in message and client._allowed_ips is not None:
+                client.write_message(json.dumps({**message, "data": client.view(snapshot)}))
+            else:
+                client.write_message(full)
         except Exception:  # noqa: BLE001
             _BROWSER_CLIENTS.discard(client)
 
@@ -190,6 +189,13 @@ class BrowserWebSocketHandler(BaseHandler, WebSocketHandler):
     def can_see(self, snapshot: Dict[str, Any]) -> bool:
         return self._allowed_ips is None or snapshot.get("ip") in self._allowed_ips
 
+    def view(self, snapshot: Dict[str, Any]) -> Dict[str, Any]:
+        """*snapshot* as this browser may see it: non-admins see only their own user row."""
+        if self._allowed_ips is None:
+            return snapshot
+        me = self.current_user.name
+        return {**snapshot, "users": [u for u in snapshot.get("users", []) if u.get("name") == me]}
+
     @web.authenticated
     async def get(self, *args: Any, **kwargs: Any) -> None:  # type: ignore[override]  # web.authenticated's typing
         await WebSocketHandler.get(self, *args, **kwargs)
@@ -204,7 +210,7 @@ class BrowserWebSocketHandler(BaseHandler, WebSocketHandler):
         _BROWSER_CLIENTS.add(self)
         log.debug("MonitoringHandler: browser client connected.")
         # Always send init (even empty) so the page can show "no workers".
-        visible = {h: s for h, s in _WORKER_SNAPSHOTS.items() if self.can_see(s)}
+        visible = {h: self.view(s) for h, s in _WORKER_SNAPSHOTS.items() if self.can_see(s)}
         try:
             self.write_message(json.dumps({"type": "init", "workers": visible}))
         except Exception:  # noqa: BLE001

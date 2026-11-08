@@ -36,9 +36,11 @@ import asyncio
 import json
 import logging
 import os
+import pwd
 import socket
+import subprocess
 import time
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 import psutil
 
@@ -51,6 +53,115 @@ logging.basicConfig(
 # ---------------------------------------------------------------------------
 # Metric collection
 # ---------------------------------------------------------------------------
+
+
+# psutil measures a process's CPU between two cpu_percent() calls on the *same*
+# Process object, so keep them across samples (pid -> Process).
+_PROC_CACHE: Dict[int, psutil.Process] = {}
+# Home-folder sizes (Linux user -> bytes), refreshed in the background by
+# _refresh_home_sizes() because walking a home folder can take seconds.
+_HOME_BYTES: Dict[str, int] = {}
+
+
+def _cgroup_limits(pid: int) -> Dict[str, Optional[float]]:
+    """Memory use/limit (MB) and CPU limit (% of one core) of *pid*'s cgroup v2.
+
+    The spawner starts each server under ``systemd-run --scope`` with MemoryMax and
+    CPUQuota; that scope's cgroup is what the kernel enforces (and OOM-kills on).
+    """
+    out: Dict[str, Optional[float]] = {"mem_mb": None, "mem_limit_mb": None, "cpu_limit_pct": None}
+    try:
+        with open(f"/proc/{pid}/cgroup") as fh:
+            rel = next(line.split("::", 1)[1].strip() for line in fh if line.startswith("0::"))
+        base = f"/sys/fs/cgroup{rel}"
+        with open(f"{base}/memory.current") as fh:
+            out["mem_mb"] = int(fh.read()) / 1048576
+        with open(f"{base}/memory.max") as fh:
+            raw = fh.read().strip()
+            out["mem_limit_mb"] = None if raw == "max" else int(raw) / 1048576
+        with open(f"{base}/cpu.max") as fh:
+            quota, period = fh.read().split()
+            out["cpu_limit_pct"] = None if quota == "max" else 100 * int(quota) / int(period)
+    except (OSError, StopIteration, ValueError):
+        pass  # not under cgroup v2, or no limits: report what we have
+    return out
+
+
+def _collect_users(cpu_count: int) -> List[Dict[str, Any]]:
+    """One row per running notebook server: the server process plus its kernels/terminals.
+
+    The JupyterHub user comes from the server's ``JUPYTERHUB_USER`` environment,
+    so usage is right even when a team shares one Linux account.
+    """
+    rows: List[Dict[str, Any]] = []
+    seen: set = set()
+    for proc in psutil.process_iter(["pid", "cmdline"]):
+        cmd = " ".join(proc.info.get("cmdline") or [])
+        if "jupyterhub-singleuser" not in cmd:
+            continue
+        try:
+            tree = [proc, *proc.children(recursive=True)]
+            linux_user = proc.username()
+            jh_user = proc.environ().get("JUPYTERHUB_USER") or linux_user
+            started = proc.create_time()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+        cpu = rss = 0.0
+        kernels = 0
+        for p in tree:
+            cached = _PROC_CACHE.setdefault(p.pid, p)
+            seen.add(p.pid)
+            try:
+                cpu += cached.cpu_percent(None)  # % of one core since the last sample
+                rss += cached.memory_info().rss
+                kernels += "ipykernel" in " ".join(cached.cmdline())
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        limits = _cgroup_limits(proc.pid)
+        rows.append({
+            "name": jh_user,
+            "linux_user": linux_user,
+            "cpu_percent": round(cpu / cpu_count, 1),  # share of the whole worker
+            "cpu_cores": round(cpu / 100, 2),
+            "cpu_limit_pct": limits["cpu_limit_pct"],  # % of one core, None = no limit
+            "mem_mb": round(limits["mem_mb"] if limits["mem_mb"] is not None else rss / 1048576, 1),
+            "mem_limit_mb": limits["mem_limit_mb"],
+            "kernels": kernels,
+            "processes": len(tree),
+            "uptime_s": int(time.time() - started),
+            "home_bytes": _HOME_BYTES.get(linux_user),
+        })
+    for pid in list(_PROC_CACHE):
+        if pid not in seen:
+            del _PROC_CACHE[pid]
+    return sorted(rows, key=lambda r: r["mem_mb"], reverse=True)
+
+
+def _home_size(path: str) -> Optional[int]:
+    """Bytes used under *path* (same filesystem only); None if du fails or is slow."""
+    try:
+        out = subprocess.run(["du", "-sxb", path], capture_output=True, text=True, timeout=30)
+        return int(out.stdout.split()[0])
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        return None
+
+
+async def _refresh_home_sizes(every: float = 60.0) -> None:
+    """Every *every* seconds, measure the home folder of each user with a server."""
+    while True:
+        users = set()
+        for proc in psutil.process_iter(["cmdline", "username"]):
+            if "jupyterhub-singleuser" in " ".join(proc.info.get("cmdline") or []):
+                users.add(proc.info.get("username"))
+        for linux_user in users - {None}:
+            try:
+                home = pwd.getpwnam(linux_user).pw_dir
+            except KeyError:
+                continue
+            size = await asyncio.to_thread(_home_size, home)
+            if size is not None:
+                _HOME_BYTES[linux_user] = size
+        await asyncio.sleep(every)
 
 
 def _collect_metrics(prev_net: Dict[str, int], elapsed: float) -> Dict[str, Any]:
@@ -115,6 +226,8 @@ def _collect_metrics(prev_net: Dict[str, int], elapsed: float) -> Dict[str, Any]
         load_avg = [0.0, 0.0, 0.0]
 
     return {
+        "uptime_s": int(time.time() - psutil.boot_time()),
+        "users": _collect_users(cpu_count),
         "hostname": socket.gethostname(),
         "ip": socket.gethostbyname(socket.gethostname()),
         "timestamp": time.time(),
@@ -162,6 +275,7 @@ async def _stream(hub_ws_url: str, interval: float, token: str) -> None:
 
     backoff = 1.0
     prev_net: Dict[str, int] = {}
+    home_task = asyncio.create_task(_refresh_home_sizes())  # noqa: F841  (runs for the agent's lifetime)
     last_time: float = time.time()
 
     log.info("Metrics agent starting. Hub WS: %s  interval: %ss", hub_ws_url, interval)
