@@ -467,18 +467,54 @@ jupyterhub-pilot/
 └── docs/                  # architecture, security, AI magics, monitoring
 ```
 
-### Load testing
+### Test a cluster
 
-On the Hub, with an admin API token (Hub → Token):
+Run these on the Hub after setup, with an admin API token (log in as the admin → **Token** → **Request new API token**). Use a test cluster only: it creates real users and servers. Watch `/hub/monitoring` while each step runs.
 
 ```bash
 export JUPYTERHUB_API_TOKEN=<token>
-jupyterhub-pilot load-test --hub http://<HUB_PRIVATE_IP>:8000 \
-    --teams team_1,team_2 --users 10 --mem-mb 300 --cpu-seconds 60
-jupyterhub-pilot load-test --hub http://<HUB_PRIVATE_IP>:8000 --users 10 --cleanup
+HUB=http://<HUB_PRIVATE_IP>:8000
+TEAMS=team_alpha,team_beta,team_gamma,team_delta   # your team names
 ```
 
-It creates test users spread over the teams, starts their servers at once, runs a kernel per user that holds `--mem-mb` and keeps a core busy, and prints start times and kernel results per team. Watch `/hub/monitoring` while it runs. Use it on test clusters only.
+**1. Servers start (2 users per worker, no workload)**
+
+```bash
+jupyterhub-pilot load-test --hub $HUB --teams $TEAMS --users 8 --no-workload
+jupyterhub-pilot load-test --hub $HUB --users 8 --cleanup
+```
+
+Expect every user `ready`. Each user gets its own Linux account on its team's worker.
+
+**2. Load (5 users per worker, each kernel holds 300 MB and keeps a core busy for 60 s)**
+
+```bash
+jupyterhub-pilot load-test --hub $HUB --teams $TEAMS --users 20
+jupyterhub-pilot load-test --hub $HUB --users 20 --cleanup
+```
+
+Expect every kernel `finished`. The dashboard shows each worker's memory and CPU rising and one row per user.
+
+**3. RAM limit (one kernel asks for more than `memory_max`)**
+
+```bash
+jupyterhub-pilot load-test --hub $HUB --teams team_alpha --users 1 --prefix oom --mem-mb 1200
+jupyterhub-pilot load-test --hub $HUB --users 1 --prefix oom --cleanup
+```
+
+Expect `1 killed`. Only the kernel dies; the user's notebook server keeps running (check Admin, or `ps -u oom-001` on the worker).
+
+**4. A worker goes down**
+
+1. Start one server: `jupyterhub-pilot load-test --hub $HUB --teams team_delta --users 1 --no-workload`
+2. Stop that team's worker VM. Its card leaves `/hub/monitoring` within seconds.
+3. Watch `sudo journalctl -u jupyterhub -f | grep CustomSpawner.poll`. For 5 minutes the server still shows running (`SSH check failed`); then `marking 'lt-001' stopped` and Admin shows it stopped. **Stop Server** in Admin also clears it right away.
+4. Start the VM again (its private IP stays the same, no `add-worker` needed). The card comes back in about a minute and the user can start again.
+5. `jupyterhub-pilot load-test --hub $HUB --users 1 --cleanup`
+
+`--cleanup` removes `--users` users with that `--prefix` (default `lt`, 10 users), so pass the same numbers you tested with. When done, revoke the token on the Token page.
+
+Reference (2026-11-08, ap-south-1, Ubuntu 26.04 Arm, `t4g.small` Hub + 4 workers, 0.5.1, JupyterHub 6.2.0, limit `1G`/`50%`): step 1 8/8 ready, median 7.6 s; step 2 20/20 ready, median 8.8 s, max 13.3 s, 20 kernels finished; step 3 kernel killed, server kept running.
 
 ## More documentation
 
