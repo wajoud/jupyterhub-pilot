@@ -1,18 +1,10 @@
-<div align="center">
+# JupyterHub-Pilot
 
-# 🚀 JupyterHub-Pilot
+One JupyterHub for many teams. Each team gets its own worker VM, and every notebook has an AI assistant.
 
-**One JupyterHub, many teams, each team on its own worker VM, with an AI assistant in every notebook.**
-
-[![Python](https://img.shields.io/badge/Python-3.9%2B-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![JupyterHub](https://img.shields.io/badge/JupyterHub-5.3%2B%20%7C%206.x-f37726?style=flat-square&logo=jupyter&logoColor=white)](https://jupyterhub.readthedocs.io/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=flat-square)](https://github.com/wajoud/jupyterhub-pilot/blob/main/LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-124%20passing-22c55e?style=flat-square)](https://github.com/wajoud/jupyterhub-pilot/tree/main/tests)
-[![AWS EC2](https://img.shields.io/badge/AWS-EC2%20Ready-FF9900?style=flat-square&logo=amazon-aws&logoColor=white)](https://github.com/wajoud/jupyterhub-pilot/blob/main/AWS_EC2_DEPLOYMENT.md)
-
-</div>
-
----
+[![PyPI](https://img.shields.io/pypi/v/jupyterhub-pilot)](https://pypi.org/project/jupyterhub-pilot/)
+[![Python](https://img.shields.io/pypi/pyversions/jupyterhub-pilot)](https://pypi.org/project/jupyterhub-pilot/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/wajoud/jupyterhub-pilot/blob/main/LICENSE)
 
 ## Contents
 
@@ -31,8 +23,6 @@
 13. [Development and tests](#development-and-tests)
 14. [More documentation](#more-documentation)
 
----
-
 ## What it does
 
 - **Team isolation.** Every JupyterHub group (a "team") is mapped to its own worker VM. When a user starts a notebook, the Hub SSHes into that team's worker and launches the user's server there, so one heavy user cannot slow down the other teams.
@@ -41,9 +31,8 @@
 - **Crash-safe state.** Sessions and team→VM mappings live in SQLite, so a Hub restart does not lose track of running servers.
 - **Secrets.** Optional HashiCorp Vault integration injects per-user secrets as environment variables.
 - **AI magics.** `%do`, `%fix`, `%review` and `%rework` in any notebook, backed by Ollama, OpenAI/Claude/Gemini (through LiteLLM) or an MCP server.
-- **Live monitoring.** A dashboard at `/hub/monitoring` shows CPU, memory, disk and network for each worker. Admins see every worker; users see only their own team's.
-
----
+- **Live monitoring.** A dashboard at `/hub/monitoring` shows each worker's CPU, memory, disk and network, and each user's usage against their limits. Admins see everything; users see their own team's workers and their own row.
+- **Load testing.** `scripts/load_test.py` starts many test users at once and reports start times and which kernels hit their limits.
 
 ## How it works
 
@@ -72,14 +61,12 @@ When `alice` (group `team_alpha`) clicks **Start My Server**:
 3. It SSHes in as `alice`, picks a free port and starts `jupyterhub-singleuser` inside a cgroup scope.
 4. The Hub's proxy routes `https://hub.example.com/user/alice/` to `worker-ip:port`.
 
----
-
 ## Before you start
 
 You need:
 
-- **2 or more Ubuntu VMs** (tested on Ubuntu 24.04 and 26.04): one Hub, plus one worker per team. Pick the cloud region **closest to your users**: from India, us-east-1 gave ~300 ms round trips and ~20 KB/s downloads, ap-south-1 ~40 ms. Amazon Linux 2023 has its own scripts (`scripts/install_*_amazon_linux.sh`), not yet tested end to end.
-- **Disk:** 20–30 GiB per worker, not the ~8 GiB launch default. The worker install alone uses ~3.4 GB, and all of that team's notebooks and packages share the disk.
+- **Two or more Ubuntu VMs** (tested on 24.04 and 26.04): one Hub, plus one worker per team, in the region closest to your users. Notebook loads about 40 files on first open, so distance shows. Amazon Linux 2023 has its own scripts (`scripts/install_*_amazon_linux.sh`), not yet tested end to end.
+- **Disk:** 20–30 GiB per worker rather than the ~8 GiB launch default. The worker install alone uses ~3.4 GB, and all of that team's notebooks and packages share the disk.
 - **A domain name** pointing at the Hub's public IP (for example `hub.example.com`). Google login only works over HTTPS on a real domain, never on `http://` or a bare IP.
 - **A Google OAuth client** (Google Cloud console → APIs & Services → Credentials → OAuth client ID → Web application) with the redirect URI `https://hub.example.com/hub/oauth_callback`.
 - **Network rules** (AWS security groups or your firewall):
@@ -91,8 +78,6 @@ You need:
 | Hub | 8000 | worker private IPs only | metrics agents connect here. Never open 8000 to the internet |
 | Hub | 8081 | worker private IPs only | notebook servers talk to the Hub API |
 | Worker | all TCP | Hub private IP | Hub SSHes in and proxies to random high ports |
-
----
 
 ## Install: Hub and first worker
 
@@ -114,9 +99,9 @@ The script asks for the Hub's private IP, your admin username and the first work
 - generates the metrics agent token at `/etc/jupyterhub-pilot/agent_token`
 - seeds the SQLite DB at `/var/lib/jupyterhub/jupyterhub_pilot_state.db`
 
-At the end it prints **a public SSH key** and **an agent token**. Keep both for the worker step.
+At the end it prints a public SSH key and an agent token. Keep both for the worker step.
 
-> ⚠️ **Admin username:** with Google login the JupyterHub username is the part of the email **before the `@`**. For `admin@company.com`, enter `admin`, not the full email, or that account will not get admin rights.
+> **Note:** with Google login the JupyterHub username is the part of the email before the `@`. For `admin@company.com`, enter `admin`, or that account will not get admin rights.
 
 Then edit `/opt/jupyterhub-pilot/hub_settings.json` and set `hosted_domain` to your Google Workspace domain (for example `company.com`). Only accounts from that domain can log in.
 
@@ -171,8 +156,6 @@ sudo systemctl restart caddy
 `default_sni` is needed because browsers send no server name for a bare IP; without it the HTTPS handshake fails.
 
 Now continue with [Start, stop and restart](#start-stop-and-restart).
-
----
 
 ## Start, stop and restart
 
@@ -261,7 +244,7 @@ If a worker is stopped or unreachable for more than 5 minutes, its users' server
 | Stop / start HTTPS | `sudo systemctl stop caddy` / `sudo systemctl start caddy` |
 | Stop / start a worker's metrics agent (on the worker) | `sudo systemctl stop jupyterhub_pilot-metrics` / `sudo systemctl start jupyterhub_pilot-metrics` |
 
-> ⚠️ **Stopping the Hub stops every user's notebook server** (JupyterHub's default). Unsaved work in running kernels is lost. Warn users before a restart.
+> **Note:** stopping the Hub stops every user's notebook server (JupyterHub's default), and unsaved work in running kernels is lost. Warn users before a restart.
 
 ### Stop one user's notebook server
 
@@ -283,8 +266,6 @@ curl -X DELETE -H "Authorization: token <ADMIN_API_TOKEN>" \
 | Groups or group members in the Admin panel | No (the user restarts their own server to move workers) |
 | The agent token | Yes: Hub and every worker's metrics agent |
 
----
-
 ## Add users and teams
 
 A **team** is a JupyterHub group whose name matches a key in `user_mapping.json` (for example `team_alpha`). Users in that group run their notebooks on that team's worker.
@@ -298,8 +279,6 @@ Rules:
 - A user with **no group** cannot start a server ("User has no groups assigned").
 - Keep each user in **one** team group. If a user is in several, the first group is used.
 - **Make someone an admin:** add their username to `admin_users` in `hub_settings.json` and restart the Hub, or tick **Admin** on their user in the Admin panel.
-
----
 
 ## Add more worker servers
 
@@ -372,8 +351,6 @@ ssh -i /opt/jupyterhub-pilot/keys/worker ubuntu@172.31.10.22 'python3 /opt/jupyt
 
 To **move a team to another VM**: set up the new worker (step 2), change that team's `server_ip` (step 3), re-seed (step 4). Users get the new VM the next time they start their server. Their notebook files stay on the old VM (`/home/<user>/notebook`); copy them over if needed.
 
----
-
 ## Remove a worker server
 
 1. Stop the servers of that team's users (Admin page → **Stop Server**).
@@ -386,8 +363,6 @@ To **move a team to another VM**: set up the new worker (step 2), change that te
 
 3. Delete the group in **Admin** → **Groups**, or move its users to another team.
 4. Copy any notebooks you want to keep from the worker's `/home/<user>/notebook`, then shut the VM down.
-
----
 
 ## Using the notebooks and AI magics
 
@@ -408,19 +383,15 @@ Load the magics in a notebook:
 
 The LLM backend is set in `~/.jupyterhub-pilot/config.json` (per user) or `/etc/jupyterhub-pilot/config.json` (whole worker). The default is a local Ollama at `http://localhost:11434`. Setup, auto-loading for all users and cloud/MCP backends: [AI Magic Commands](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/AI_MAGICS.md).
 
----
-
 ## Monitoring dashboard
 
-Open `https://hub.example.com/hub/monitoring` (or click **📊 Monitoring** in the Hub's nav bar).
+Open `https://hub.example.com/hub/monitoring` (or **Monitoring** in the Hub's nav bar).
 
 - You must be logged in.
-- **Admins** see every worker and every user's CPU, memory (against their limit), kernels and home-folder size. **Users** see only their own team's workers, and only their own usage row.
+- Admins see every worker and every user's CPU, memory (against their limit), kernels and home-folder size. Other users see only their own team's workers and their own usage row.
 - A worker appears when its metrics agent connects with the right token and disappears when the agent stops.
 
 Agent status, on a worker: `sudo systemctl status jupyterhub_pilot-metrics`. More: [Monitoring](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/MONITORING.md).
-
----
 
 ## Configuration reference
 
@@ -449,8 +420,6 @@ Environment variables:
 | `JUPYTERPILOT_AGENT_TOKEN` | Hub and every worker agent | Shared secret for the metrics agents. The Hub refuses all agents if it is unset |
 | `VAULT_ADDR`, `VAULT_TOKEN` | Hub | Only when Vault is enabled |
 
----
-
 ## Logs and troubleshooting
 
 | Where | Log |
@@ -472,11 +441,9 @@ Environment variables:
 
 More cases: [Installation Guide → Troubleshooting](https://github.com/wajoud/jupyterhub-pilot/blob/main/INSTALL.md#-troubleshooting).
 
----
-
 ## Development and tests
 
-All 123 tests run without real infrastructure (no SSH, EC2 or Vault):
+The tests run without real infrastructure (no SSH, EC2 or Vault):
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -491,12 +458,23 @@ jupyterhub-pilot/
 ├── spawner.py             # CustomSpawner: SSH launch, JIT user creation, cgroups
 ├── jupyterhub_config.py   # Hub config (Google login, spawner, monitoring routes)
 ├── templates/page.html    # Adds the Monitoring link to the Hub nav bar
-├── scripts/               # install_hub.sh, install_worker.sh
+├── scripts/               # install (Ubuntu, Amazon Linux), add_worker.sh, load_test.py
 ├── tests/                 # unit tests (see tests/README.md)
 └── docs/                  # architecture, security, AI magics, monitoring
 ```
 
----
+### Load testing
+
+On the Hub, with an admin API token (Hub → Token):
+
+```bash
+export JUPYTERHUB_API_TOKEN=<token>
+python3 /opt/jupyterhub-pilot/scripts/load_test.py --hub http://<HUB_PRIVATE_IP>:8000 \
+    --teams team_1,team_2 --users 10 --mem-mb 300 --cpu-seconds 60
+python3 /opt/jupyterhub-pilot/scripts/load_test.py --hub http://<HUB_PRIVATE_IP>:8000 --users 10 --cleanup
+```
+
+It creates test users spread over the teams, starts their servers at once, runs a kernel per user that holds `--mem-mb` and keeps a core busy, and prints start times and kernel results per team. Watch `/hub/monitoring` while it runs. Use it on test clusters only.
 
 ## More documentation
 
@@ -508,10 +486,3 @@ jupyterhub-pilot/
 - [Live Monitoring Dashboard](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/MONITORING.md)
 - [Tests](https://github.com/wajoud/jupyterhub-pilot/blob/main/tests/README.md)
 
----
-
-<div align="center">
-
-Built with 🔧 by [@wajoud](https://github.com/wajoud) · Star ⭐ if this helps your team!
-
-</div>
