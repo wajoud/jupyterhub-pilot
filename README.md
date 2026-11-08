@@ -202,9 +202,9 @@ JUPYTERPILOT_TEST_PASSWORD=<8+ characters>
 JUPYTERPILOT_TEST_ADMIN_PASSWORD=<32+ characters, different>
 ```
 
-Any user name logs in with the first password; users in `admin_users` log in with the second. The Hub will not start if either is shorter than that.
+Any user name logs in with the first password; users in `admin_users` log in with the second. The Hub will not start if either is shorter than that. Restart the Hub. Use it only behind Caddy with access limited to your IP, never on a public Hub.
 
-If a worker is stopped or unreachable for more than 5 minutes, its users' servers are shown as stopped; they can start again once a worker for their team is back. Restart the Hub. Use it only behind Caddy with access limited to your IP, never on a public Hub.
+If a worker is stopped or unreachable for more than 5 minutes, its users' servers are shown as stopped; they can start again once a worker for their team is back.
 
 ### Everyday commands
 
