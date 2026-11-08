@@ -396,6 +396,23 @@ Agent status, on a worker: `sudo systemctl status jupyterhub_pilot-metrics`. Mor
 | `resource_limits` | `memory_max` (e.g. `"1G"`) and `cpu_quota` (e.g. `"50%"`) per notebook server; `null` turns limits off |
 | `vault_enabled`, `vault_secret_path` | Vault secret injection; see [Security](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/SECURITY.md) |
 
+### Change the per-user RAM and CPU limit
+
+Every user's notebook server gets the same limit (default `1G` RAM, `50%` of one core); a kernel over `memory_max` is killed, the worker and other users are not affected. The limit is per user, not per worker, so size it for how many users share a worker (5 users on a 2 GiB worker: about `300M`). To change it, on the Hub:
+
+```bash
+F=/opt/jupyterhub-pilot/hub_settings.json
+sudo jq '.resource_limits = {"memory_max": "512M", "cpu_quota": "100%"}' $F | sudo tee $F.tmp >/dev/null && sudo mv $F.tmp $F
+sudo jq .resource_limits $F      # check
+sudo systemctl restart jupyterhub
+```
+
+- `memory_max`: `300M`, `512M`, `1G`, `2G`, ...
+- `cpu_quota`: `50%` = half a core, `100%` = one core, `200%` = two cores
+- No limits: `sudo jq '.resource_limits = null' ...`
+
+The restart stops every running notebook server; new limits apply to servers started after it. Check a user's row on `/hub/monitoring`, which shows memory against the limit.
+
 Environment variables:
 
 | Variable | Where | Meaning |
