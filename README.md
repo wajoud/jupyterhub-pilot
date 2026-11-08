@@ -125,10 +125,17 @@ Install system-wide (with `sudo`), so every user's notebook server finds Jupyter
 3. the Hub's private IP
 4. the agent token (printed by `install-hub`, or `sudo cat /etc/jupyterhub-pilot/agent_token` on the Hub)
 
-With several workers, you can answer the four questions in one pasted command (same order as above):
+**No prompts (handy for several workers):** fill in the four answers once, in the order above, and paste the same block on every worker:
 
 ```bash
-printf '%s\n' ubuntu "<HUB_PUBLIC_SSH_KEY>" <HUB_PRIVATE_IP> <AGENT_TOKEN> | sudo jupyterhub-pilot install-worker
+sudo apt update && sudo apt install -y python3-pip
+sudo pip3 install --break-system-packages --ignore-installed "jupyterhub-pilot[worker,ai]"
+printf '%s\n' ubuntu \
+  "<HUB_PUBLIC_SSH_KEY>" \
+  <HUB_PRIVATE_IP> \
+  <AGENT_TOKEN> \
+  | sudo jupyterhub-pilot install-worker
+hostname -I     # this worker's private IP, for add-worker on the Hub
 ```
 
 It starts the `jupyterhub_pilot-metrics` service. The first worker is already registered as `team_alpha`; check the Hub can reach it (on the Hub):
@@ -287,6 +294,19 @@ Paste the same Hub public key and agent token as for the first worker. Get them 
 ```bash
 cat /opt/jupyterhub-pilot/keys/worker.pub
 sudo cat /etc/jupyterhub-pilot/agent_token
+```
+
+Or skip the prompts with the same block as for the first worker:
+
+```bash
+sudo apt update && sudo apt install -y python3-pip
+sudo pip3 install --break-system-packages --ignore-installed "jupyterhub-pilot[worker,ai]"
+printf '%s\n' ubuntu \
+  "<HUB_PUBLIC_SSH_KEY>" \
+  <HUB_PRIVATE_IP> \
+  <AGENT_TOKEN> \
+  | sudo jupyterhub-pilot install-worker
+hostname -I     # this worker's private IP, for add-worker on the Hub
 ```
 
 **3. Register it on the Hub:**
