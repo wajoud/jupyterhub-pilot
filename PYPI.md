@@ -15,7 +15,7 @@ Ubuntu 24.04 or 26.04: one Hub VM plus one worker VM per team, on the same priva
 **Hub**
 
 ```bash
-sudo apt install -y python3-pip
+sudo apt update && sudo apt install -y python3-pip
 sudo pip3 install --break-system-packages --ignore-installed "jupyterhub-pilot[hub]"
 sudo jupyterhub-pilot install-hub
 ```
@@ -25,7 +25,7 @@ It asks for the Hub's private IP, your admin username and the first worker's IP,
 **Each worker**
 
 ```bash
-sudo apt install -y python3-pip
+sudo apt update && sudo apt install -y python3-pip
 sudo pip3 install --break-system-packages --ignore-installed "jupyterhub-pilot[worker,ai]"
 sudo jupyterhub-pilot install-worker
 ```

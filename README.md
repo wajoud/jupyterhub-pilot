@@ -88,7 +88,7 @@ Everything installs from PyPI; there is nothing to clone. Each machine keeps its
 ### 1. Hub VM
 
 ```bash
-sudo apt install -y python3-pip            # Amazon Linux: sudo dnf install -y python3-pip
+sudo apt update && sudo apt install -y python3-pip            # Amazon Linux: sudo dnf install -y python3-pip
 sudo pip3 install --break-system-packages --ignore-installed "jupyterhub-pilot[hub]"
 sudo jupyterhub-pilot install-hub
 ```
@@ -113,7 +113,7 @@ Then edit `/opt/jupyterhub-pilot/hub_settings.json` and set `hosted_domain` to y
 ### 2. Worker VM
 
 ```bash
-sudo apt install -y python3-pip
+sudo apt update && sudo apt install -y python3-pip
 sudo pip3 install --break-system-packages --ignore-installed "jupyterhub-pilot[worker,ai]"
 sudo jupyterhub-pilot install-worker
 ```
@@ -124,6 +124,12 @@ Install system-wide (with `sudo`), so every user's notebook server finds Jupyter
 2. the Hub's public SSH key (printed by `install-hub`, or `cat /opt/jupyterhub-pilot/keys/worker.pub` on the Hub)
 3. the Hub's private IP
 4. the agent token (printed by `install-hub`, or `sudo cat /etc/jupyterhub-pilot/agent_token` on the Hub)
+
+With several workers, you can answer the four questions in one pasted command (same order as above):
+
+```bash
+printf '%s\n' ubuntu "<HUB_PUBLIC_SSH_KEY>" <HUB_PRIVATE_IP> <AGENT_TOKEN> | sudo jupyterhub-pilot install-worker
+```
 
 It starts the `jupyterhub_pilot-metrics` service. The first worker is already registered as `team_alpha`; check the Hub can reach it (on the Hub):
 
@@ -157,11 +163,19 @@ Keep Caddy in front even for a quick test: HTTPS gives HTTP/2 and `encode` compr
 **No domain yet (testing only):** Caddy can serve the Hub's public IP with its own self-signed certificate. Browsers show a warning you click through, and Google login will not work, so use [test login](#option-c-test-login-no-google-testing-only).
 
 ```bash
-printf '{\n\tdefault_sni <HUB_PUBLIC_IP>\n}\n\nhttps://<HUB_PUBLIC_IP> {\n\ttls internal\n\tencode zstd gzip\n\treverse_proxy <HUB_PRIVATE_IP>:8000\n}\n' | sudo tee /etc/caddy/Caddyfile
+# On EC2 this reads the Hub's public IP; elsewhere set PUBLIC_IP=<HUB_PUBLIC_IP> by hand
+TOKEN=$(curl -s -X PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
+PUBLIC_IP=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
+echo $PUBLIC_IP
+
+printf '{\n\tdefault_sni %s\n}\n\nhttps://%s {\n\ttls internal\n\tencode zstd gzip\n\treverse_proxy <HUB_PRIVATE_IP>:8000\n}\n' "$PUBLIC_IP" "$PUBLIC_IP" | sudo tee /etc/caddy/Caddyfile
 sudo systemctl restart caddy
+
+# Check Caddy answers (should print 200, once the Hub is running)
+curl -sk -o /dev/null -w '%{http_code}\n' --resolve $PUBLIC_IP:443:127.0.0.1 https://$PUBLIC_IP/hub/login
 ```
 
-`default_sni` is needed because browsers send no server name for a bare IP; without it the HTTPS handshake fails.
+`default_sni` is needed because browsers send no server name for a bare IP; without it the HTTPS handshake fails. Test from the Hub with `--resolve` as above: a plain `curl https://$PUBLIC_IP` from the Hub itself goes out and back in through the security group, which only allows your IP, so it prints `000` even when Caddy works. Then open `https://<HUB_PUBLIC_IP>` from your own machine.
 
 Now continue with [Start, stop and restart](#start-stop-and-restart).
 
@@ -202,7 +216,7 @@ JUPYTERPILOT_TEST_PASSWORD=<8+ characters>
 JUPYTERPILOT_TEST_ADMIN_PASSWORD=<32+ characters, different>
 ```
 
-Any user name logs in with the first password; users in `admin_users` log in with the second. The Hub will not start if either is shorter than that. Restart the Hub. Use it only behind Caddy with access limited to your IP, never on a public Hub.
+Any user name logs in with the first password. Admins (the names in `admin_users`, e.g. the one you gave `install-hub`) must use the **second** password; the first one does not work for them. The Hub will not start if either is shorter than that. Restart the Hub. Use it only behind Caddy with access limited to your IP, never on a public Hub.
 
 If a worker is stopped or unreachable for more than 5 minutes, its users' servers are shown as stopped; they can start again once a worker for their team is back.
 
@@ -263,7 +277,7 @@ Use this to give a new team its own VM (or to move a team to a bigger VM). No Hu
 **2. Set up the worker** (on the new VM), as in [Worker VM](#2-worker-vm):
 
 ```bash
-sudo apt install -y python3-pip
+sudo apt update && sudo apt install -y python3-pip
 sudo pip3 install --break-system-packages --ignore-installed "jupyterhub-pilot[worker,ai]"
 sudo jupyterhub-pilot install-worker
 ```
