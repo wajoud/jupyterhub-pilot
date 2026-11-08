@@ -8,7 +8,7 @@ This guide walks through deploying JupyterHub-Pilot across two EC2 instances (a 
 - **Recommended**: `t4g.small` (2 vCPU, 2 GiB Memory)
 - **Architecture**: 64-bit Arm (Graviton)
 - **Region**: the one closest to your users (latency matters: Notebook loads ~40 JavaScript files on first open).
-- **OS**: Ubuntu 26.04 LTS. On **Amazon Linux 2023** log in as `ec2-user`, run `sudo dnf install -y git` before cloning, use `scripts/install_hub_amazon_linux.sh` / `scripts/install_worker_amazon_linux.sh` instead of the Ubuntu scripts, and answer `ec2-user` wherever the steps say `ubuntu` (not yet tested end to end; see `TODO.md`).
+- **OS**: Ubuntu 24.04 or 26.04 LTS. Amazon Linux 2023 works with the same commands (log in as `ec2-user`, install pip with `sudo dnf install -y python3-pip`, and pass `ec2-user` to `add-worker`), but has not been tested end to end yet.
 - **Storage**: 15 GiB `gp3` for the Hub, **20–30 GiB per worker**. Don't keep the launch default (~8 GiB): a worker install alone uses ~3.4 GB, and every user's files and packages go on the same disk. To grow a running worker: EC2 → Volumes → Modify, then `sudo growpart /dev/nvme0n1 1 && sudo resize2fs /dev/nvme0n1p1`.
 
 ### Security Groups
@@ -30,11 +30,9 @@ Google login only accepts an **HTTPS** callback on a **real domain name** — ne
 SSH into your Hub instance and run:
 
 ```bash
-# 1. Clone the repo (Ubuntu 26 doesn't support sudo bash <(curl...) process substitution)
-git clone https://github.com/wajoud/jupyterhub-pilot.git
-
-# 2. Run the Hub setup script
-sudo bash jupyterhub-pilot/scripts/install_hub.sh
+sudo apt install -y python3-pip
+sudo pip3 install --break-system-packages --ignore-installed "jupyterhub-pilot[hub]"
+sudo jupyterhub-pilot install-hub
 ```
 
 When prompted, enter:
@@ -51,12 +49,12 @@ When prompted, enter:
 SSH into your Worker instance in a new terminal tab and run:
 
 ```bash
-# 1. Clone the repo
-git clone https://github.com/wajoud/jupyterhub-pilot.git
-
-# 2. Run the Worker setup script
-sudo bash jupyterhub-pilot/scripts/install_worker.sh
+sudo apt install -y python3-pip
+sudo pip3 install --break-system-packages --ignore-installed "jupyterhub-pilot[worker,ai]"
+sudo jupyterhub-pilot install-worker
 ```
+
+More workers: repeat this on each one, then on the Hub run `sudo jupyterhub-pilot add-worker <team> <worker-private-ip>`.
 
 When prompted:
 - Enter the **OS admin username** (e.g. `ubuntu`) — this grants the Hub SSH access to provision the worker
@@ -96,10 +94,9 @@ In the Google Cloud console, set the OAuth client's **Authorized redirect URI** 
 On the **Hub VM**:
 
 ```bash
-export CLIENT_ID=... CLIENT_SECRET=...
-export OAUTH_CALLBACK_URL=https://hub.example.com/hub/oauth_callback
-export JUPYTERPILOT_AGENT_TOKEN=$(cat /etc/jupyterhub-pilot/agent_token)
-python3 -m jupyterhub -f /opt/jupyterhub-pilot/jupyterhub_config.py
+sudo nano /etc/jupyterhub-pilot/hub.env     # CLIENT_ID, CLIENT_SECRET, OAUTH_CALLBACK_URL
+sudo systemctl enable --now jupyterhub
+sudo journalctl -u jupyterhub -f            # logs
 ```
 
 > ⚠️ Never start the Hub with `DummyAuthenticator` on a reachable network: anyone could log in as any user, including the admin.
@@ -119,7 +116,7 @@ JupyterHub-Pilot includes **Just-In-Time (JIT) Provisioning**.
 When a new user (like `alice`) logs in for the very first time, the Hub automatically SSHes into the assigned Worker EC2 and:
 1. Creates the `alice` OS account
 2. Enables systemd lingering (so her notebooks stay alive after SSH closes)
-3. Creates her notebook folder (Jupyter and the AI magics are already installed once for all users by `install_worker.sh`)
+3. Creates her notebook folder (Jupyter and the AI magics are already installed once for all users with the worker's pip install)
 4. Injects the Hub's SSH key so the Hub can manage her server
 
 All you need to do is add the user to the correct group in the JupyterHub Admin panel, and they can immediately start their server.

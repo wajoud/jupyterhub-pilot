@@ -1,13 +1,6 @@
 """Pure helpers of scripts/load_test.py (the Hub/kernel parts need a live cluster)."""
 
-import importlib.util
-import os
-
-_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "load_test.py")
-_spec = importlib.util.spec_from_file_location("load_test", _path)
-assert _spec is not None and _spec.loader is not None
-lt = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(lt)
+from jupyterhub_pilot import load_test as lt
 
 
 def test_users_are_spread_evenly_over_teams():

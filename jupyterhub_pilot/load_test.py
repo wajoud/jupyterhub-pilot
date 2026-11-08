@@ -14,8 +14,7 @@ Load test for a JupyterHub-Pilot cluster. Run it on the Hub.
 Needs an admin API token (Hub → Token page while logged in as an admin):
 
   export JUPYTERHUB_API_TOKEN=<token>
-  python3 /opt/jupyterhub-pilot/scripts/load_test.py \\
-      --hub http://<HUB_PRIVATE_IP>:8000 --teams team_1,team_2 --users 10
+  jupyterhub-pilot load-test --hub http://<HUB_PRIVATE_IP>:8000 --teams team_1,team_2 --users 10
 
 Only for test clusters: it creates real servers on real workers.
 """
@@ -150,7 +149,7 @@ def fmt(v: Optional[float]) -> str:
     return "—" if v is None else f"{v:.1f}s"
 
 
-def main() -> int:
+def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--hub", required=True, help="Hub URL from the Hub VM, e.g. http://172.31.17.142:8000")
     ap.add_argument("--teams", default="", help="comma-separated team groups (as in user_mapping.json)")
@@ -162,7 +161,7 @@ def main() -> int:
     ap.add_argument("--parallel", type=int, default=20, help="how many spawns/kernels run at once")
     ap.add_argument("--no-workload", action="store_true", help="only time the spawns")
     ap.add_argument("--cleanup", action="store_true", help="stop and delete the test users, then exit")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     token = os.environ.get("JUPYTERHUB_API_TOKEN", "")
     if not token:
@@ -211,7 +210,7 @@ def main() -> int:
     for s in spawns:
         if not s["ok"]:
             print(f"  ✗ {s['user']} ({team_of[s['user']]}): {s['error']}")
-    print(f"\nWhen done: python3 {sys.argv[0]} --hub {args.hub} --users {args.users} --prefix {args.prefix} --cleanup")
+    print(f"\nWhen done: jupyterhub-pilot load-test --hub {args.hub} --users {args.users} --prefix {args.prefix} --cleanup")
     return 0 if len(ready) == len(users) else 1
 
 

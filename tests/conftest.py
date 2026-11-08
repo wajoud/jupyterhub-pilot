@@ -2,9 +2,15 @@ import os
 import sys
 
 # Ensure the root of the project is on sys.path so that the root-level
-# `jupyterhub_pilot/` package and `spawner.py` are always importable in tests,
+# `jupyterhub_pilot/` package is always importable in tests,
 # even without a `pip install -e .` step.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+# Point the package's config dir at a throwaway folder, before anything imports
+# jupyterhub_pilot.paths, so tests never read or write /opt/jupyterhub-pilot.
+import tempfile  # noqa: E402
+
+os.environ["JUPYTERHUB_PILOT_DIR"] = tempfile.mkdtemp(prefix="jhp-test-")
 
 from unittest.mock import MagicMock
 

@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-# Add root folder to sys.path so we can import jupyterhub_config
+# Add root folder to sys.path so the package imports from the checkout
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Import builtins config_mock from conftest/builtins
@@ -40,7 +40,7 @@ def custom_open(file, *args, **kwargs):
 
 builtins.open = custom_open
 try:
-    import jupyterhub_config  # noqa: F401
+    from jupyterhub_pilot import jupyterhub_config  # noqa: F401
 finally:
     builtins.open = orig_open
 

@@ -59,6 +59,7 @@ except (ImportError, ModuleNotFoundError):
 from jupyterhub.spawner import Spawner
 
 from jupyterhub_pilot.admin import RBACManager
+from jupyterhub_pilot.paths import CONFIG_DIR, GET_PORT_CMD
 from jupyterhub_pilot.session_store import SessionStore
 from jupyterhub_pilot.vault_client import VaultClient
 
@@ -66,7 +67,7 @@ from jupyterhub_pilot.vault_client import VaultClient
 # Module-level config bootstrap
 # ──────────────────────────────────────────────────────────────────────────────
 
-BASE_DIR: str = os.path.dirname(__file__)
+BASE_DIR: str = CONFIG_DIR  # hub_settings.json, user_mapping.json
 SETTINGS_FILE: str = os.path.join(BASE_DIR, "hub_settings.json")
 
 
@@ -306,10 +307,6 @@ class CustomSpawner(Spawner):
         # jupyterhub, notebook and the AI magics are installed once per worker
         # by install_worker.sh; installing them here took minutes and blew
         # through JupyterHub's 60 s start_timeout.
-
-        # Copy the get_port.py script so port allocation works
-        sudo cp /opt/jupyterhub-pilot/get_port.py {home}/get_port.py
-        sudo chown {u}:{u} {home}/get_port.py
         """
 
         try:
@@ -544,7 +541,7 @@ class CustomSpawner(Spawner):
 
         try:
             # Acquire port
-            _, stdout, _ = ssh.exec_command("python3 ~/get_port.py")
+            _, stdout, _ = ssh.exec_command(GET_PORT_CMD)
             port = int(stdout.readline().strip())
 
             # Check for stale process on that port

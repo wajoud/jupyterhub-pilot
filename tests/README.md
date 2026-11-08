@@ -108,7 +108,7 @@ Tests for the new infrastructure added in Task 1.
 | `test_get_server_info_raises_if_group_missing_everywhere` | `RuntimeError` if group missing in both sources |
 
 ### [`test_config.py`](test_config.py) — Hub Config
-Tests for [`jupyterhub_config.py`](../jupyterhub_config.py):
+Tests for [`jupyterhub_pilot/jupyterhub_config.py`](../jupyterhub_pilot/jupyterhub_config.py):
 
 | Test | What it validates |
 |---|---|

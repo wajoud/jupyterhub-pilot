@@ -75,13 +75,14 @@ sudo apt-get update
 sudo apt-get install -y python3-pip python3-venv git net-tools
 ```
 
-### 1b. Clone and install JupyterHub-Pilot
+### 1b. Install JupyterHub-Pilot
 
 ```bash
-sudo git clone https://github.com/wajoud/jupyterhub-pilot.git /opt/jupyterhub-pilot
-cd /opt/jupyterhub-pilot
-sudo pip3 install -e . --break-system-packages
+sudo pip3 install --break-system-packages --ignore-installed "jupyterhub-pilot[hub]"
+sudo mkdir -p /opt/jupyterhub-pilot/keys   # this machine's settings and keys
 ```
+
+The code comes from PyPI; `/opt/jupyterhub-pilot` holds only this Hub's own files. (`sudo jupyterhub-pilot install-hub` does all of part 1 for you; this guide shows the steps by hand.)
 
 ### 1c. Configure hub_settings.json
 
@@ -174,41 +175,13 @@ sudo pip3 install jupyterhub notebook --break-system-packages
 
 `jupyterhub-singleuser` (the per-user server binary) is part of the `jupyterhub` package and must be installed on **every worker EC2**.
 
-### 2c. Clone the repo on the worker
+### 2c. Install JupyterHub-Pilot on the worker
 
 ```bash
-sudo git clone https://github.com/wajoud/jupyterhub-pilot.git /opt/jupyterhub-pilot
-sudo pip3 install -e /opt/jupyterhub-pilot --break-system-packages
+sudo pip3 install --break-system-packages --ignore-installed "jupyterhub-pilot[worker,ai]"
 ```
 
-### 2d. Create the get_port.py script
-
-The spawner runs `python3 ~/get_port.py` on the worker to allocate a free TCP port for each user. Install it into the admin user's home directory:
-
-```bash
-cat > /home/ubuntu/get_port.py << 'PYEOF'
-#!/usr/bin/env python3
-"""Find a free TCP port in the high-port range (8900-9900)."""
-import socket
-
-def find_free_port(start=8900, end=9900):
-    for port in range(start, end):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.bind(("0.0.0.0", port))
-                return port
-            except OSError:
-                continue
-    raise RuntimeError("No free ports available in range")
-
-if __name__ == "__main__":
-    print(find_free_port())
-PYEOF
-
-chmod +x /home/ubuntu/get_port.py
-```
-
-JIT provisioning will copy this script into each user's home directory automatically on their first login.
+Install system-wide, so every user's notebook server finds `jupyterhub-singleuser` and the AI magics. No port helper script is needed: the spawner picks a free port with an inline `python3 -c` over SSH. (`sudo jupyterhub-pilot install-worker` does part 2 for you.)
 
 ### 2e. Enable systemd lingering for the admin user
 
@@ -329,8 +302,10 @@ cd /opt/jupyterhub-pilot
 export CLIENT_ID=... CLIENT_SECRET=...
 export OAUTH_CALLBACK_URL=https://hub.example.com/hub/oauth_callback
 export JUPYTERPILOT_AGENT_TOKEN=$(cat /etc/jupyterhub-pilot/agent_token)
-python3 -m jupyterhub -f jupyterhub_config.py
+python3 -m jupyterhub -f "$(python3 -c 'import jupyterhub_pilot.paths as p; print(p.PACKAGE_DIR)')/jupyterhub_config.py"
 ```
+
+The Hub config ships in the package and reads this machine's settings from `/opt/jupyterhub-pilot` (change with `JUPYTERHUB_PILOT_DIR`).
 
 > ⚠️ Never start the Hub with `DummyAuthenticator` on a reachable network: anyone could log in as any user, including the admin.
 
@@ -366,8 +341,10 @@ After=network.target
 [Service]
 User=ubuntu
 WorkingDirectory=/opt/jupyterhub-pilot
+Environment=JUPYTERHUB_PILOT_DIR=/opt/jupyterhub-pilot
 EnvironmentFile=/etc/jupyterhub-pilot/hub.env
-ExecStart=/usr/bin/python3 -m jupyterhub -f /opt/jupyterhub-pilot/jupyterhub_config.py
+# <PACKAGE_DIR>: python3 -c 'import jupyterhub_pilot.paths as p; print(p.PACKAGE_DIR)'
+ExecStart=/usr/bin/python3 -m jupyterhub -f <PACKAGE_DIR>/jupyterhub_config.py
 Restart=always
 RestartSec=10
 
@@ -403,7 +380,7 @@ After=network.target
 [Service]
 # Contains JUPYTERPILOT_AGENT_TOKEN=<same value as the Hub>; chmod 600
 EnvironmentFile=/etc/jupyterhub-pilot/agent.env
-ExecStart=/usr/bin/python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py --hub ws://HUB_PRIVATE_IP:8000/hub/monitoring/ws --interval 2
+ExecStart=/usr/bin/python3 -m jupyterhub_pilot.metrics_agent --hub ws://HUB_PRIVATE_IP:8000/hub/monitoring/ws --interval 2
 Restart=always
 RestartSec=5
 
@@ -514,10 +491,10 @@ print('group_a:', s.get_mapping('group_a'))
 "
 # Expected: DB ping: True, group_a: {..., 'server_ip': '10.0.1.10'}
 
-# 2. SSH connection and port script work on each worker
+# 2. The Hub can SSH to each worker, which has Jupyter installed
 ssh -i /opt/jupyterhub-pilot/keys/hub_worker -o StrictHostKeyChecking=no \
-    ubuntu@10.0.1.10 "python3 ~/get_port.py"
-# Expected: a number between 8900-9900
+    ubuntu@10.0.1.10 "command -v jupyterhub-singleuser"
+# Expected: a path such as /usr/local/bin/jupyterhub-singleuser
 
 # 3. JupyterHub API is responding
 curl -s http://localhost:8081/hub/api/info | python3 -m json.tool | grep version
@@ -529,9 +506,6 @@ curl -s http://localhost:8081/hub/api/info | python3 -m json.tool | grep version
 ```bash
 # 1. jupyterhub-singleuser is installed
 jupyterhub-singleuser --version
-
-# 2. get_port.py returns a free port
-python3 ~/get_port.py
 
 # 3. systemd lingering is enabled
 loginctl show-user ubuntu | grep Linger
@@ -594,21 +568,6 @@ RuntimeError: hub_api_url not found in hub_settings.json
 ```
 
 Check that `hub_settings.json` contains `"hub_api_url"` and that you started JupyterHub from the `/opt/jupyterhub-pilot` directory.
-
----
-
-### get_port.py not found
-
-```
-FileNotFoundError: ~/get_port.py
-```
-
-The script must exist at `~/get_port.py` for each user on the worker. JIT provisioning copies it automatically. For pre-existing users, copy manually:
-
-```bash
-sudo cp /home/ubuntu/get_port.py /home/<username>/get_port.py
-sudo chown <username>:<username> /home/<username>/get_port.py
-```
 
 ---
 
