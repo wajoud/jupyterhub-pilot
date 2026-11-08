@@ -32,10 +32,10 @@ try:
 except (ImportError, ModuleNotFoundError):
     _paramiko_ssh_exc = getattr(paramiko, "ssh_exception", paramiko)  # type: ignore
 
-import spawner as spawner_module
+from jupyterhub_pilot import spawner as spawner_module
 from jupyterhub_pilot.admin import RBACManager
 from jupyterhub_pilot.session_store import SessionStore
-from spawner import CustomSpawner
+from jupyterhub_pilot.spawner import CustomSpawner
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Fixtures
@@ -129,7 +129,7 @@ def _make_ssh_mock(port: int = 8888, port_in_use: bool = False) -> MagicMock:
     stdout_spawn.channel.recv_exit_status.return_value = 0
 
     def exec_cmd_mock(cmd, *args, **kwargs):
-        if "get_port.py" in cmd:
+        if "getsockname" in cmd:  # GET_PORT_CMD
             return None, stdout_port, None
         elif "netstat" in cmd:
             return None, stdout_netstat, None

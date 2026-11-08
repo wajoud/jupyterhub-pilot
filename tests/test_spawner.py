@@ -8,8 +8,8 @@ import pytest
 # Add root folder to sys.path so we can import spawner
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-import spawner
-from spawner import CustomSpawner
+from jupyterhub_pilot import spawner
+from jupyterhub_pilot.spawner import CustomSpawner
 
 # Configure global hub_settings inside the spawner module for testing
 spawner.hub_settings = {
@@ -23,7 +23,7 @@ def mock_spawner_instance():
     import os
     import tempfile
 
-    import spawner as spawner_module
+    from jupyterhub_pilot import spawner as spawner_module
     from jupyterhub_pilot.session_store import SessionStore
 
     instance = CustomSpawner()
@@ -99,7 +99,7 @@ async def test_start_success(mock_spawner_instance):
     mock_ssh = MagicMock()
 
     # Mock exec_command return values
-    # Command 1: get_port.py -> returns port
+    # Command 1: GET_PORT_CMD -> returns port
     stdout_port = MagicMock()
     stdout_port.readline.return_value = "8888\n"
 
@@ -116,7 +116,7 @@ async def test_start_success(mock_spawner_instance):
     stdout_spawn.channel.recv_exit_status.return_value = 0
 
     def exec_cmd_mock(cmd, *args, **kwargs):
-        if "get_port.py" in cmd:
+        if "getsockname" in cmd:  # GET_PORT_CMD
             return None, stdout_port, None
         elif "netstat" in cmd:
             return None, stdout_netstat, None
@@ -163,7 +163,7 @@ async def test_start_port_in_use_cleanup(mock_spawner_instance):
 
     def exec_cmd_mock(cmd, *args, **kwargs):
         executed_commands.append(cmd)
-        if "get_port.py" in cmd:
+        if "getsockname" in cmd:  # GET_PORT_CMD
             return None, stdout_port, None
         elif "netstat" in cmd:
             return None, stdout_netstat, None
@@ -203,7 +203,7 @@ async def test_start_oom_warning(mock_spawner_instance):
     stdout_spawn.channel.recv_exit_status.return_value = 0
 
     def exec_cmd_mock(cmd, *args, **kwargs):
-        if "get_port.py" in cmd:
+        if "getsockname" in cmd:  # GET_PORT_CMD
             return None, stdout_port, None
         elif "netstat" in cmd:
             return None, stdout_netstat, None
@@ -229,7 +229,7 @@ async def test_start_oom_warning(mock_spawner_instance):
 
 @pytest.mark.anyio
 async def test_stop(mock_spawner_instance):
-    import spawner as spawner_module
+    from jupyterhub_pilot import spawner as spawner_module
 
     mock_ssh = MagicMock()
     mock_spawner_instance.ip = "192.168.1.100"
@@ -256,7 +256,7 @@ async def test_stop(mock_spawner_instance):
 
 @pytest.mark.anyio
 async def test_poll_running(mock_spawner_instance):
-    import spawner as spawner_module
+    from jupyterhub_pilot import spawner as spawner_module
 
     mock_ssh = MagicMock()
 
@@ -282,7 +282,7 @@ async def test_poll_running(mock_spawner_instance):
 
 @pytest.mark.anyio
 async def test_poll_stopped(mock_spawner_instance):
-    import spawner as spawner_module
+    from jupyterhub_pilot import spawner as spawner_module
 
     mock_ssh = MagicMock()
 
@@ -306,7 +306,7 @@ async def test_poll_stopped(mock_spawner_instance):
 
 @pytest.mark.anyio
 async def test_poll_exception(mock_spawner_instance):
-    import spawner as spawner_module
+    from jupyterhub_pilot import spawner as spawner_module
 
     # Pre-populate so poll() proceeds past the "no session" early return
     spawner_module._store.set_session(

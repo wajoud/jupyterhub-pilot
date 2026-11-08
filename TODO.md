@@ -56,13 +56,11 @@ Amazon Linux 2023 (default user `ec2-user`) now has its own install scripts next
 
 ## Make `pip install jupyterhub-pilot` enough (no git clone)
 
-Deferred until after the ap-south-1 test: install scripts that `pip install` from PyPI can only test a version that is already released, so this goes in its own release.
+Done on branch `feature/pip-install` (release as 0.5.0).
 
-Today the PyPI package ships only `jupyterhub_pilot/`. A deployment also needs files outside it, and the scripts expect a clone at `/opt/jupyterhub-pilot`.
-
-- [ ] Move `spawner.py` into the package (`jupyterhub_pilot/spawner.py`) and update imports in `jupyterhub_config.py` and the tests.
-- [ ] Ship `jupyterhub_config.py` and `templates/page.html` as package data, or add a `jupyterhub-pilot init` command that writes them (plus `hub_settings.json` / `user_mapping.json`) to a config directory.
-- [ ] Add a console script for the metrics agent (e.g. `jupyterhub-pilot-metrics`) so the systemd unit no longer runs `/opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py`.
-- [ ] Ship `get_port.py` in the package (or inline it in the spawner) instead of copying it from `/opt/jupyterhub-pilot/get_port.py`.
-- [ ] Change all four install scripts (Ubuntu + Amazon Linux) to `pip install "jupyterhub-pilot[hub]"` / `"jupyterhub-pilot[worker]"` instead of `git clone`.
-- [ ] Update README, INSTALL.md and AWS_EC2_DEPLOYMENT.md.
+- [x] `spawner.py`, `jupyterhub_config.py`, `templates/` and the setup scripts moved into the package; the repo-root `jupyterhub_config.py` is a shim so clone-based installs keep working.
+- [x] Settings and keys live in `/opt/jupyterhub-pilot` (`JUPYTERHUB_PILOT_DIR`), code comes from pip.
+- [x] `jupyterhub-pilot` command: `install-hub`, `install-worker`, `add-worker`, `load-test`. One script per role for Ubuntu and Amazon Linux.
+- [x] Metrics agent and seeding run as `python -m jupyterhub_pilot.…`; no `get_port.py` (inline `python3 -c`).
+- [x] Docs (README, AWS guide, INSTALL.md, MONITORING.md).
+- [ ] Verify on EC2 from PyPI (or `pip install "jupyterhub-pilot[hub] @ git+https://github.com/wajoud/jupyterhub-pilot@feature/pip-install"` before the release).
