@@ -5,9 +5,9 @@
 **One JupyterHub, many teams, each team on its own worker VM, with an AI assistant in every notebook.**
 
 [![Python](https://img.shields.io/badge/Python-3.9%2B-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![JupyterHub](https://img.shields.io/badge/JupyterHub-5.x-f37726?style=flat-square&logo=jupyter&logoColor=white)](https://jupyterhub.readthedocs.io/)
+[![JupyterHub](https://img.shields.io/badge/JupyterHub-5.3%2B%20%7C%206.x-f37726?style=flat-square&logo=jupyter&logoColor=white)](https://jupyterhub.readthedocs.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=flat-square)](https://github.com/wajoud/jupyterhub-pilot/blob/main/LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-123%20passing-22c55e?style=flat-square)](https://github.com/wajoud/jupyterhub-pilot/tree/main/tests)
+[![Tests](https://img.shields.io/badge/Tests-124%20passing-22c55e?style=flat-square)](https://github.com/wajoud/jupyterhub-pilot/tree/main/tests)
 [![AWS EC2](https://img.shields.io/badge/AWS-EC2%20Ready-FF9900?style=flat-square&logo=amazon-aws&logoColor=white)](https://github.com/wajoud/jupyterhub-pilot/blob/main/AWS_EC2_DEPLOYMENT.md)
 
 </div>
@@ -78,7 +78,7 @@ When `alice` (group `team_alpha`) clicks **Start My Server**:
 
 You need:
 
-- **2 or more Ubuntu VMs** (tested on Ubuntu 24.04 and 26.04): one Hub, plus one worker per team.
+- **2 or more Ubuntu VMs** (tested on Ubuntu 24.04 and 26.04): one Hub, plus one worker per team. Pick the cloud region **closest to your users**: from India, us-east-1 gave ~300 ms round trips and ~20 KB/s downloads, ap-south-1 ~40 ms. Amazon Linux 2023 has its own scripts (`scripts/install_*_amazon_linux.sh`), not yet tested end to end.
 - **A domain name** pointing at the Hub's public IP (for example `hub.example.com`). Google login only works over HTTPS on a real domain, never on `http://` or a bare IP.
 - **A Google OAuth client** (Google Cloud console → APIs & Services → Credentials → OAuth client ID → Web application) with the redirect URI `https://hub.example.com/hub/oauth_callback`.
 - **Network rules** (AWS security groups or your firewall):
@@ -152,10 +152,22 @@ curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo 
 sudo apt update && sudo apt install -y caddy
 
 echo 'hub.example.com {
+    encode zstd gzip
     reverse_proxy <HUB_PRIVATE_IP>:8000
 }' | sudo tee /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
+
+Keep Caddy in front even for a quick test: HTTPS gives HTTP/2 and `encode` compresses Notebook's JavaScript about 4×. Over plain `http://<ip>:8000` from far away, the Notebook page can time out and stay blank (`ChunkLoadError`).
+
+**No domain yet (testing only):** Caddy can serve the Hub's public IP with its own self-signed certificate. Browsers show a warning you click through, and Google login will not work, so use [test login](#option-c-test-login-no-google-testing-only).
+
+```bash
+printf '{\n\tdefault_sni <HUB_PUBLIC_IP>\n}\n\nhttps://<HUB_PUBLIC_IP> {\n\ttls internal\n\tencode zstd gzip\n\treverse_proxy <HUB_PRIVATE_IP>:8000\n}\n' | sudo tee /etc/caddy/Caddyfile
+sudo systemctl restart caddy
+```
+
+`default_sni` is needed because browsers send no server name for a bare IP; without it the HTTPS handshake fails.
 
 Now continue with [Start, stop and restart](#start-stop-and-restart).
 
@@ -180,7 +192,14 @@ python3 -m jupyterhub -f jupyterhub_config.py
 
 ### Option B: run as a systemd service (production)
 
-Put the secrets in an env file only root can read:
+`install_hub.sh` already wrote the service (`/etc/systemd/system/jupyterhub.service`) and a root-only env file (`/etc/jupyterhub-pilot/hub.env`) with the agent token filled in. Fill in the Google lines, then start it:
+
+```bash
+sudo nano /etc/jupyterhub-pilot/hub.env
+sudo systemctl enable --now jupyterhub
+```
+
+To set it up by hand instead, put the secrets in an env file only root can read:
 
 ```bash
 sudo tee /etc/jupyterhub-pilot/hub.env > /dev/null << EOF
@@ -215,6 +234,17 @@ INI
 sudo systemctl daemon-reload
 sudo systemctl enable --now jupyterhub
 ```
+
+### Option C: test login, no Google (testing only)
+
+For a trial without a Google client or domain, set two passwords in `/etc/jupyterhub-pilot/hub.env` (the file has commented lines ready) and leave the Google lines empty:
+
+```
+JUPYTERPILOT_TEST_PASSWORD=<8+ characters>
+JUPYTERPILOT_TEST_ADMIN_PASSWORD=<32+ characters, different>
+```
+
+Any user name logs in with the first password; users in `admin_users` log in with the second. Restart the Hub. Use it only behind Caddy with access limited to your IP, never on a public Hub.
 
 ### Everyday commands
 
@@ -288,6 +318,14 @@ Paste the same Hub public key and agent token as for the first worker. Get them 
 cat /opt/jupyterhub-pilot/keys/worker.pub
 sudo cat /etc/jupyterhub-pilot/agent_token
 ```
+
+**Quick way (steps 3–5 in one command, on the Hub):**
+
+```bash
+sudo bash /opt/jupyterhub-pilot/scripts/add_worker.sh team_beta 172.31.10.22          # ec2-user as 3rd argument on Amazon Linux
+```
+
+It adds or updates the team in `user_mapping.json`, loads it into SQLite and tests SSH. Then go to step 6.
 
 **3. Register the worker on the Hub.** Add an entry to `/opt/jupyterhub-pilot/user_mapping.json`:
 

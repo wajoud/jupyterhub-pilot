@@ -7,7 +7,8 @@ This guide walks through deploying JupyterHub-Pilot across two EC2 instances (a 
 ### Instance Types
 - **Recommended**: `t4g.small` (2 vCPU, 2 GiB Memory)
 - **Architecture**: 64-bit Arm (Graviton)
-- **OS**: Ubuntu 26.04 LTS
+- **Region**: the one closest to your users (latency matters: Notebook loads ~40 JavaScript files on first open).
+- **OS**: Ubuntu 26.04 LTS. On **Amazon Linux 2023** log in as `ec2-user`, run `sudo dnf install -y git` before cloning, use `scripts/install_hub_amazon_linux.sh` / `scripts/install_worker_amazon_linux.sh` instead of the Ubuntu scripts, and answer `ec2-user` wherever the steps say `ubuntu` (not yet tested end to end; see `TODO.md`).
 - **Storage**: 15 GiB `gp3` per instance (stays within the 30 GB AWS Free Tier limit).
 
 ### Security Groups
@@ -78,10 +79,13 @@ sudo apt update && sudo apt install -y caddy
 
 # Replace the domain and the Hub's PRIVATE IP:
 echo 'hub.example.com {
+    encode zstd gzip
     reverse_proxy <HUB-PRIVATE-IP>:8000
 }' | sudo tee /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
+
+No domain yet? See the no-domain test setup (self-signed certificate on the public IP) in the README's *HTTPS with Caddy* section.
 
 In the Google Cloud console, set the OAuth client's **Authorized redirect URI** to `https://hub.example.com/hub/oauth_callback`.
 

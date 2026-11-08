@@ -20,7 +20,7 @@ Usage
 ─────
     # On the Worker VM:
     python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py \\
-        --hub ws://172.31.30.186:8000/monitoring/ws \\
+        --hub ws://172.31.30.186:8000/hub/monitoring/ws \\
         --interval 2
 
 Environment variables (alternative to CLI flags):
@@ -214,7 +214,7 @@ def main() -> None:
         "--hub",
         default=os.environ.get("JUPYTERPILOT_HUB_WS", ""),
         help="WebSocket URL of the Hub monitoring endpoint "
-        "(e.g. ws://172.31.30.186:8000/monitoring/ws)",
+        "(e.g. ws://172.31.30.186:8000/hub/monitoring/ws)",
     )
     parser.add_argument(
         "--interval",

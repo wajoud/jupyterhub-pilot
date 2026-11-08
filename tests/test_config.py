@@ -8,7 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 # Import builtins config_mock from conftest/builtins
 import builtins
 
-config_mock = builtins.get_config()
+config_mock = builtins.get_config()  # type: ignore[attr-defined]
 
 # We need to make sure hub_settings.json exists or is mocked during import of jupyterhub_config.
 # Since jupyterhub_config.py reads from hub_settings.json, let's mock open specifically for it or
@@ -53,3 +53,24 @@ def test_jupyterhub_config_loaded():
     assert config_mock.Authenticator.admin_users == {"admin_user"}
     assert config_mock.JupyterHub.admin_access is False
     assert len(config_mock.JupyterHub.extra_handlers) > 0
+    # Cookie flags must sit in tornado_settings; JupyterHub ignores a top-level cookie_options.
+    assert config_mock.JupyterHub.tornado_settings["cookie_options"]["secure"] is True
+
+
+def test_test_password_switches_to_shared_password_login(monkeypatch):
+    import importlib
+
+    from unittest.mock import MagicMock
+
+    fresh = MagicMock()
+    monkeypatch.setattr(builtins, "get_config", lambda: fresh, raising=False)
+    monkeypatch.setenv("JUPYTERPILOT_TEST_PASSWORD", "test-password-123")
+    monkeypatch.setenv("JUPYTERPILOT_TEST_ADMIN_PASSWORD", "a" * 32)
+    builtins.open = custom_open
+    try:
+        importlib.reload(jupyterhub_config)
+    finally:
+        builtins.open = orig_open
+    assert fresh.JupyterHub.authenticator_class == "shared-password"
+    assert fresh.SharedPasswordAuthenticator.user_password == "test-password-123"
+    assert fresh.SharedPasswordAuthenticator.admin_password == "a" * 32

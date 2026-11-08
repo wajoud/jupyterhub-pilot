@@ -403,7 +403,7 @@ After=network.target
 [Service]
 # Contains JUPYTERPILOT_AGENT_TOKEN=<same value as the Hub>; chmod 600
 EnvironmentFile=/etc/jupyterhub-pilot/agent.env
-ExecStart=/usr/bin/python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py --hub ws://HUB_PRIVATE_IP:8000/monitoring/ws --interval 2
+ExecStart=/usr/bin/python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py --hub ws://HUB_PRIVATE_IP:8000/hub/monitoring/ws --interval 2
 Restart=always
 RestartSec=5
 
@@ -631,7 +631,7 @@ Check the agent is running and pointing to the correct Hub WS URL:
 
 ```bash
 sudo systemctl status jupyterhub_pilot-agent
-# The --hub flag should be: ws://<HUB-PRIVATE-IP>:8000/monitoring/ws
+# The --hub flag should be: ws://<HUB-PRIVATE-IP>:8000/hub/monitoring/ws
 ```
 
 Also verify port `8000` on the Hub security group allows inbound from the Worker private IP.

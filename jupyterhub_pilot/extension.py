@@ -192,6 +192,7 @@ class JupyterHubPilotMagics(Magics):
 
     def _inject_cell(self, code: str, run: bool = False) -> None:
         """Inject *code* as the next cell, or run it immediately if *run* is True."""
+        assert self.shell is not None  # IPython sets it when the magics are registered
         if run:
             self.shell.run_cell(code)
         else:

@@ -26,7 +26,7 @@ Agents authenticate with a shared token. Set the same `JUPYTERPILOT_AGENT_TOKEN`
 
 ```bash
 JUPYTERPILOT_AGENT_TOKEN=<token> python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py \
-    --hub      ws://10.0.0.10:8000/monitoring/ws \
+    --hub      ws://10.0.0.10:8000/hub/monitoring/ws \
     --interval 2
 ```
 
@@ -46,7 +46,7 @@ After=network.target
 # Contains JUPYTERPILOT_AGENT_TOKEN=<token>; chmod 600
 EnvironmentFile=/etc/jupyterhub-pilot/agent.env
 ExecStart=/usr/bin/python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py \
-    --hub ws://10.0.0.10:8000/monitoring/ws --interval 2
+    --hub ws://10.0.0.10:8000/hub/monitoring/ws --interval 2
 Restart=always
 RestartSec=5
 

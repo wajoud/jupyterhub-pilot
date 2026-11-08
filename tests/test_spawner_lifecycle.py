@@ -100,7 +100,7 @@ def mock_spawner(store) -> CustomSpawner:
     spawner_module._store = store
 
     # Stub _get_server_info to avoid real file I/O
-    instance._get_server_info = MagicMock(
+    instance._get_server_info = MagicMock(  # type: ignore[method-assign]
         return_value={
             "server_ip": "192.168.1.100",
             "server_ssh_key": "/path/to/key.pem",
@@ -321,8 +321,9 @@ class TestSpawnerStart:
     @pytest.mark.anyio
     async def test_start_no_groups_raises(self, mock_spawner):
         mock_spawner.user.groups = []
-        with pytest.raises(RuntimeError, match="no groups assigned"):
+        with pytest.raises(spawner_module.web.HTTPError, match="not in a team") as exc:
             await mock_spawner.start()
+        assert exc.value.status_code == 403  # shown on the page, not a bare 500
 
     @pytest.mark.anyio
     async def test_start_missing_hub_api_url_raises(self, mock_spawner):

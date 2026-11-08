@@ -120,7 +120,7 @@ class AgentWebSocketHandler(WebSocketHandler):
         # the worker's private IP, which is what the team mapping holds.
         # (remote_ip honours the proxy's X-Forwarded-For: the Hub runs with xheaders.)
         snapshot["ip"] = self.request.remote_ip
-        hostname = snapshot.get("hostname") or self.request.remote_ip
+        hostname = str(snapshot.get("hostname") or self.request.remote_ip)
         self.hostname = hostname
         _WORKER_SNAPSHOTS[hostname] = snapshot
 
@@ -191,7 +191,7 @@ class BrowserWebSocketHandler(BaseHandler, WebSocketHandler):
         return self._allowed_ips is None or snapshot.get("ip") in self._allowed_ips
 
     @web.authenticated
-    async def get(self, *args: Any, **kwargs: Any) -> None:
+    async def get(self, *args: Any, **kwargs: Any) -> None:  # type: ignore[override]  # web.authenticated's typing
         await WebSocketHandler.get(self, *args, **kwargs)
 
     def open(self, *args: str, **kwargs: str) -> None:

@@ -52,13 +52,13 @@ Repository = "https://github.com/wajoud/jupyterhub-pilot.git"
 [project.optional-dependencies]
 # Hub-side dependencies: pip install jupyterhub_pilot[hub]
 hub = [
-    "jupyterhub>=5.0.0",
+    "jupyterhub>=5.3,<7",  # 5.3+: shared-password test login; tested on 6.2
     "paramiko>=3.4.0,<6.0",
     "websockets>=12.0",
 ]
 # Worker-side dependencies: pip install jupyterhub_pilot[worker]
 worker = [
-    "jupyterhub>=5.0.0",
+    "jupyterhub>=5.3,<7",  # 5.3+: shared-password test login; tested on 6.2
     "notebook>=7.0.0",
     "psutil>=6.0.0",
     "websockets>=12.0",
