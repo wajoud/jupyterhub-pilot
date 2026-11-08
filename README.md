@@ -79,6 +79,7 @@ When `alice` (group `team_alpha`) clicks **Start My Server**:
 You need:
 
 - **2 or more Ubuntu VMs** (tested on Ubuntu 24.04 and 26.04): one Hub, plus one worker per team. Pick the cloud region **closest to your users**: from India, us-east-1 gave ~300 ms round trips and ~20 KB/s downloads, ap-south-1 ~40 ms. Amazon Linux 2023 has its own scripts (`scripts/install_*_amazon_linux.sh`), not yet tested end to end.
+- **Disk:** 20–30 GiB per worker, not the ~8 GiB launch default. The worker install alone uses ~3.4 GB, and all of that team's notebooks and packages share the disk.
 - **A domain name** pointing at the Hub's public IP (for example `hub.example.com`). Google login only works over HTTPS on a real domain, never on `http://` or a bare IP.
 - **A Google OAuth client** (Google Cloud console → APIs & Services → Credentials → OAuth client ID → Web application) with the redirect URI `https://hub.example.com/hub/oauth_callback`.
 - **Network rules** (AWS security groups or your firewall):
@@ -244,7 +245,9 @@ JUPYTERPILOT_TEST_PASSWORD=<8+ characters>
 JUPYTERPILOT_TEST_ADMIN_PASSWORD=<32+ characters, different>
 ```
 
-Any user name logs in with the first password; users in `admin_users` log in with the second. Restart the Hub. Use it only behind Caddy with access limited to your IP, never on a public Hub.
+Any user name logs in with the first password; users in `admin_users` log in with the second. The Hub will not start if either is shorter than that.
+
+If a worker is stopped or unreachable for more than 5 minutes, its users' servers are shown as stopped; they can start again once a worker for their team is back. Restart the Hub. Use it only behind Caddy with access limited to your IP, never on a public Hub.
 
 ### Everyday commands
 

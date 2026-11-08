@@ -5,19 +5,19 @@ under "Next release". Hub install, worker installs, team routing, JIT user creat
 
 ## Next release (branch `fix/ec2-test-findings`)
 
-Code is done for every item marked [x]; the items marked "verify" need the ap-south-1 re-test.
+Released in 0.4.0. Verified on 2026-11-08 in ap-south-1 (Ubuntu 26.04 Arm, 1 Hub + 2 workers, JupyterHub 6.2.0).
 
 ### Monitoring
 - [x] Metrics agent URL is now `ws://HUB:8000/hub/monitoring/ws` (JupyterHub serves extra handlers under `/hub/`; the old URL cost a `302` per connect).
   Workers installed from older `main` need: `sudo sed -i 's#:8000/monitoring/ws#:8000/hub/monitoring/ws#' /etc/systemd/system/jupyterhub_pilot-metrics.service`.
-- [ ] Verify: `/hub/monitoring` shows both workers to an admin, and only `team_alpha`'s worker to a `team_alpha` user.
+- [x] Verified: admin sees both workers; a `team_beta` user sees only beta's.
 - [ ] Later (not this release): `JupyterHub.extra_handlers` is deprecated since 3.1 but still works on 6.2. Moving monitoring to a JupyterHub service is a larger change.
 
 ### Speed
 - [x] Docs: pick the region closest to users (measured from India: us-east-1 ~300 ms / ~20 KB/s vs ap-south-1 ~40 ms); keep Caddy in front even for tests.
 - [x] `encode zstd gzip` in the Caddyfiles (README, AWS guide). Measured 8× faster downloads through Caddy.
 - [x] No-domain test setup in README: Caddy `tls internal` on the public IP, with the `default_sni` line it needs.
-- [ ] Verify: first Notebook load from ap-south-1 takes seconds.
+- [x] Verified: from India, ap-south-1 via Caddy: 0.03 s connect, ~870 KB/s (us-east-1 was ~20 KB/s); Notebook loads in seconds.
 
 ### Install and first run
 - [x] `scripts/add_worker.sh <team> <ip> [admin_ssh_user]`: upserts the team, re-seeds SQLite, tests SSH.
@@ -28,7 +28,17 @@ Code is done for every item marked [x]; the items marked "verify" need the ap-so
 - [x] `jupyterhub>=5.3,<7` in `pyproject.toml`; README badge says 5.3+ | 6.x.
 - [x] `install_hub.sh` writes `/etc/systemd/system/jupyterhub.service` and a root-only `/etc/jupyterhub-pilot/hub.env` (agent token filled in, test-login lines ready). Start with `sudo systemctl enable --now jupyterhub`.
 - [x] `cookie_options` moved into `tornado_settings`, where JupyterHub reads it. The login cookie is now really `Secure`, so plain `http://` logins loop: use Caddy.
-- [ ] Verify all of the above in the ap-south-1 run.
+- [x] Verified in ap-south-1: install scripts, systemd unit, shared-password login, `add_worker.sh`, team routing, Secure cookie, HTTPS via Caddy.
+
+## Next release: findings from the 2026-11-08 ap-south-1 run
+
+- [x] `add_worker.sh` run on a worker by mistake wrote `user_mapping.json` there, then crashed with a SQLite traceback. Check it is on the Hub (key + DB present) before changing anything, and say "run this on the Hub".
+- [x] Monitoring page: the CPU history line is drawn over the "Last update" text.
+- [x] A test password under 8 characters stops the Hub from starting. Say "8+ characters" in the `hub.env` comment, and check the length in `install_hub.sh` docs.
+- [x] Docs: default EC2 root disk (~8 GB) is half full after the worker install. Recommend 20–30 GiB per worker and show how to grow the volume.
+- [x] The first metrics-agent connect after a Hub start can hit `404` (agent connects before the Hub's routes are added); it recovers on the next retry, but backoff could reach 60 s. Backoff now caps at 10 s.
+- [x] A stopped worker left its users' servers listed as running forever (`poll()` treated every failed SSH check as a blip), and Stop Server failed for them. A worker unreachable for 5 minutes now marks its servers stopped.
+- [ ] Verify on EC2: stop a worker, servers show stopped after ~5 min; start it, users can start again; dashboard card has no overlap.
 
 ## Test Amazon Linux 2023 support end to end
 
