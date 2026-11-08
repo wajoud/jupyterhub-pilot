@@ -490,6 +490,46 @@ class TestSpawnerPoll:
         assert result is None
 
     @pytest.mark.anyio
+    async def test_poll_worker_unreachable_past_grace_reports_stopped(
+        self, mock_spawner, store
+    ):
+        """A blip keeps the server; a worker gone longer than the grace marks it stopped."""
+        store.set_session(
+            "test_user", vm_ip="192.168.1.100", group_name="team_alpha", status="running"
+        )
+        clock = [1000.0]
+        with patch.object(
+            mock_spawner, "_open_ssh", side_effect=Exception("Unable to connect to port 22")
+        ), patch.object(spawner_module.time, "monotonic", lambda: clock[0]):
+            assert await mock_spawner.poll() is None  # first failure: a blip
+            clock[0] += spawner_module._UNREACHABLE_GRACE - 1
+            assert await mock_spawner.poll() is None  # still inside the grace
+            clock[0] += 2
+            assert await mock_spawner.poll() == 0  # gone too long: stopped
+        assert store.get_session("test_user")["status"] == "stopped"
+
+    @pytest.mark.anyio
+    async def test_poll_success_resets_unreachable_timer(self, mock_spawner, store):
+        """A good check in between restarts the grace, so blips never add up."""
+        store.set_session(
+            "test_user", vm_ip="192.168.1.100", group_name="team_alpha", status="running"
+        )
+        stdout_ok = MagicMock()
+        stdout_ok.read.return_value = b"0\n"
+        ok_ssh = MagicMock()
+        ok_ssh.exec_command.return_value = (None, stdout_ok, None)
+        clock = [1000.0]
+        with patch.object(spawner_module.time, "monotonic", lambda: clock[0]):
+            with patch.object(mock_spawner, "_open_ssh", side_effect=Exception("down")):
+                assert await mock_spawner.poll() is None
+            clock[0] += spawner_module._UNREACHABLE_GRACE - 1
+            with patch.object(mock_spawner, "_open_ssh", return_value=ok_ssh):
+                assert await mock_spawner.poll() is None  # reachable again
+            clock[0] += spawner_module._UNREACHABLE_GRACE - 1
+            with patch.object(mock_spawner, "_open_ssh", side_effect=Exception("down")):
+                assert await mock_spawner.poll() is None  # new outage, new grace
+
+    @pytest.mark.anyio
     async def test_poll_stopped_updates_store_status(self, mock_spawner, store):
         """When poll() detects a stopped process it updates the SQLite status."""
         store.set_session(

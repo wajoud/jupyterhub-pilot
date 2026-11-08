@@ -328,7 +328,12 @@
     margin-top: 16px;
     padding-top: 16px;
     border-top: 1px solid var(--border);
-    height: 80px;
+  }
+
+  /* Chart.js sizes the canvas to its parent; a parent holding only the canvas
+     keeps the chart from spilling over the label row onto "Last update". */
+  .chart-box {
+    height: 60px;
     position: relative;
   }
 
@@ -531,7 +536,7 @@ function createCard(hostname) {
       <!-- CPU Sparkline -->
       <div class="chart-row">
         <div class="chart-label">CPU History (last ${HISTORY} samples)</div>
-        <canvas id="chart-${h}" height="60"></canvas>
+        <div class="chart-box"><canvas id="chart-${h}"></canvas></div>
       </div>
 
       <div class="last-seen" id="ls-${h}">Last update: —</div>

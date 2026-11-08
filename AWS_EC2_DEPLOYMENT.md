@@ -9,7 +9,7 @@ This guide walks through deploying JupyterHub-Pilot across two EC2 instances (a 
 - **Architecture**: 64-bit Arm (Graviton)
 - **Region**: the one closest to your users (latency matters: Notebook loads ~40 JavaScript files on first open).
 - **OS**: Ubuntu 26.04 LTS. On **Amazon Linux 2023** log in as `ec2-user`, run `sudo dnf install -y git` before cloning, use `scripts/install_hub_amazon_linux.sh` / `scripts/install_worker_amazon_linux.sh` instead of the Ubuntu scripts, and answer `ec2-user` wherever the steps say `ubuntu` (not yet tested end to end; see `TODO.md`).
-- **Storage**: 15 GiB `gp3` per instance (stays within the 30 GB AWS Free Tier limit).
+- **Storage**: 15 GiB `gp3` for the Hub, **20–30 GiB per worker**. Don't keep the launch default (~8 GiB): a worker install alone uses ~3.4 GB, and every user's files and packages go on the same disk. To grow a running worker: EC2 → Volumes → Modify, then `sudo growpart /dev/nvme0n1 1 && sudo resize2fs /dev/nvme0n1p1`.
 
 ### Security Groups
 1. **EC2 #1 (The Hub)**:

@@ -198,7 +198,7 @@ async def _stream(hub_ws_url: str, interval: float, token: str) -> None:
                 int(backoff),
             )
             await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 60)  # cap at 60 s
+            backoff = min(backoff * 2, 10)  # cap at 10 s: a Hub restart shows up within seconds
 
 
 # ---------------------------------------------------------------------------

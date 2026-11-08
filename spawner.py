@@ -137,6 +137,10 @@ def _db_available() -> bool:
 # worker can neither read the log nor pre-create the PID file.  The Linux
 # user name is in the file name because a shared ``ssh_user`` login means
 # several JupyterHub users share one home directory.
+# poll(): how long a worker may be unreachable over SSH before its servers are
+# reported stopped. Shorter outages are treated as blips and keep the server.
+_UNREACHABLE_GRACE: float = 300.0
+
 _PID_FILE = "~/.jupyterhub-pilot-{}.pid"
 _LOG_FILE = "~/.jupyterhub-pilot-{}.log"
 
@@ -161,6 +165,8 @@ class CustomSpawner(Spawner):
     """
 
     _session_meta: Dict[str, Any] = {}  # noqa: RUF012
+    # When poll() first failed to reach this user's worker (None = reachable).
+    _unreachable_since: Optional[float] = None
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -746,11 +752,27 @@ class CustomSpawner(Spawner):
                 f"&& echo 0 || echo 1",
             )
         except Exception as exc:  # noqa: BLE001
+            now = time.monotonic()
+            if self._unreachable_since is None:
+                self._unreachable_since = now
+            down_for = now - self._unreachable_since
+            if down_for < _UNREACHABLE_GRACE:
+                self.log.warning(
+                    "CustomSpawner.poll: SSH check failed for '%s' (%ds): %s",
+                    username, down_for, exc,
+                )
+                return None  # a blip must not drop a live server
+            # The worker has been gone too long (stopped, crashed): show the server as
+            # stopped so the user can start again once a worker is reachable.
             self.log.warning(
-                "CustomSpawner.poll: SSH check failed for '%s': %s", username, exc
+                "CustomSpawner.poll: %s unreachable for %ds; marking '%s' stopped",
+                vm_ip, down_for, username,
             )
-            return None
+            self._unreachable_since = None
+            _store.set_session(username, status="stopped")
+            return 0
 
+        self._unreachable_since = None
         if status == "0":
             return None  # Running — JupyterHub Spawner API convention
 

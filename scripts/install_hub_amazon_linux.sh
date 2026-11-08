@@ -120,7 +120,7 @@ CLIENT_SECRET=
 OAUTH_CALLBACK_URL=https://hub.example.com/hub/oauth_callback
 JUPYTERPILOT_AGENT_TOKEN=$(cat /etc/jupyterhub-pilot/agent_token)
 # TEST ONLY, no Google or domain: set both and leave the Google lines empty.
-# Any user name logs in with the first password; admins with the second (32+ characters).
+# Any user name logs in with the first password (8+ characters); admins with the second (32+ characters).
 #JUPYTERPILOT_TEST_PASSWORD=
 #JUPYTERPILOT_TEST_ADMIN_PASSWORD=$(openssl rand -hex 16)
 EOF

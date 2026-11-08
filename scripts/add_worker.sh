@@ -21,6 +21,12 @@ if ! [[ "$TEAM" =~ ^[A-Za-z0-9_-]+$ ]]; then
     exit 1
 fi
 
+# Only the Hub has the spawner key and the state DB; on a worker, stop before touching anything.
+if [ ! -f "$KEY" ] || [ ! -d "$(dirname "$DB")" ]; then
+    echo "❌ This is not the Hub ($KEY or $(dirname "$DB") is missing). Run add_worker.sh on the Hub VM."
+    exit 1
+fi
+
 [ -f "$MAPPING" ] || echo '{}' > "$MAPPING"
 jq --arg t "$TEAM" --arg ip "$WORKER_IP" --arg key "$KEY" --arg u "$ADMIN_SSH_USER" \
     '.[$t] = {server_ip: $ip, server_ssh_key: $key, admin_ssh_user: $u}' \
