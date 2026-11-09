@@ -3,6 +3,7 @@
     sudo jupyterhub-pilot install-hub
     sudo jupyterhub-pilot add-worker <team> <worker-private-ip> [admin-ssh-user]
     sudo jupyterhub-pilot install-worker
+    sudo jupyterhub-pilot upgrade          (Hub and every worker)
     jupyterhub-pilot load-test --hub http://<hub-private-ip>:8000 --teams team_1 ...
 """
 
@@ -60,12 +61,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     aw.add_argument("worker_ip")
     aw.add_argument("admin_ssh_user", nargs="?", help="sudo user on the worker (default: the Hub's own user)")
     sub.add_parser("load-test", add_help=False, help="on the Hub: start many test users (see load-test --help)")
+    sub.add_parser("upgrade", add_help=False, help="upgrade this Hub or worker in place (see upgrade --help)")
     args, rest = parser.parse_known_args(argv)
 
     if args.cmd == "load-test":
         from jupyterhub_pilot import load_test
 
         return load_test.main(rest)
+    if args.cmd == "upgrade":
+        from jupyterhub_pilot import upgrade
+
+        return upgrade.main(rest)
     if rest:
         parser.error(f"unrecognized arguments: {' '.join(rest)}")
     if args.cmd == "install-hub":

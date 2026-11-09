@@ -146,7 +146,15 @@ sudo jupyterhub-pilot add-worker team_alpha <WORKER_PRIVATE_IP>
 
 ### Upgrading
 
-`sudo pip3 install --break-system-packages --ignore-installed -U "jupyterhub-pilot[hub]"` on the Hub (`[worker,ai]` on workers), then `sudo systemctl restart jupyterhub` (or `jupyterhub_pilot-metrics`). Your settings in `/opt/jupyterhub-pilot` are kept.
+On the Hub and on every worker:
+
+```bash
+sudo jupyterhub-pilot upgrade
+```
+
+It upgrades the package with pip, then applies only the changes the new release needs (for example, adds new `hub_settings.json` keys with their defaults, keeping your values), and restarts the metrics agent on a worker. On the Hub it lists any worker still on an older version and asks before restarting the Hub, because that stops every user's running server (`--yes` skips the question). Keys, tokens, passwords, teams and users' files are never touched. [CHANGELOG.md](https://github.com/wajoud/jupyterhub-pilot/blob/main/CHANGELOG.md) says for each release whether the Hub, the workers or both need it.
+
+The installed version is recorded in `/etc/jupyterhub-pilot/version`. Installs from before 0.6.0 have no such file, so the first `upgrade` runs every step; each one is safe to run twice. If you installed the new package by hand already, `sudo jupyterhub-pilot upgrade --no-pip` still applies the steps.
 
 Installs made with `git clone` (0.4.0 and earlier) keep working after a `git pull`. To move one to the pip layout, install the package as above and run `sudo jupyterhub-pilot install-hub` (or `install-worker`) again: it keeps the keys and team mapping in `/opt/jupyterhub-pilot` and rewrites the service.
 
@@ -267,7 +275,7 @@ sudo jq '.idle_cull = {"timeout": 10800, "every": 300}' $F | sudo tee $F.tmp >/d
 sudo systemctl restart jupyterhub
 ```
 
-Installs from before 0.6.0 have no `idle_cull` key, so culling stays off until you add it with the command above.
+Installs from before 0.6.0 have no `idle_cull` key: culling stays off until you add it, or until `sudo jupyterhub-pilot upgrade` adds the 3-hour default (set it to `null` afterwards to keep it off).
 
 ### When do I need a restart?
 

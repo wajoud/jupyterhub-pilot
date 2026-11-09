@@ -125,6 +125,8 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
+# `jupyterhub-pilot upgrade` runs only the steps newer than this.
+"$PYTHON" -c "import jupyterhub_pilot as p; print(p.__version__)" > /etc/jupyterhub-pilot/version
 
 echo ""
 echo "✅ Hub set up."

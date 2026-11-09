@@ -76,6 +76,8 @@ EOF
 systemctl daemon-reload
 systemctl enable jupyterhub_pilot-metrics
 systemctl restart jupyterhub_pilot-metrics
+# `jupyterhub-pilot upgrade` runs only the steps newer than this.
+"$PYTHON" -c "import jupyterhub_pilot as p; print(p.__version__)" > /etc/jupyterhub-pilot/version
 
 echo ""
 echo "✅ Worker set up. Agent logs: sudo journalctl -u jupyterhub_pilot-metrics -f"
