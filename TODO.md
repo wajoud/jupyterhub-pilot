@@ -91,10 +91,11 @@ Today deleting a user in the Hub (Admin page, API, or `load-test --cleanup`) lea
 
 Today `resource_limits` in `hub_settings.json` is one limit for every user, and changing it needs a Hub restart.
 
-- [ ] Let an admin set `memory_max` / `cpu_quota` from the Admin panel, per team and per user. JupyterHub's Admin → Groups page already edits group **properties**, so a team limit can be read from the group's properties at spawn time; per-user needs a small admin form (users have no properties editor).
-- [ ] Order: user override → team (group properties) → `hub_settings.json` default. New limits apply on the user's next server start, no Hub restart.
-- [ ] Validate values (`512M`, `1G`, `100%`) and refuse bad ones with a clear message instead of a failed spawn.
-- [ ] Show the limit that applied on `/hub/monitoring`; tests; update README (Change the per-user RAM and CPU limit).
+- [x] Team limits from group properties (`memory_max`, `cpu_quota` in Admin → Groups); per-user limits on a new admin-only **Limits** page (`/hub/limits`, stored in SQLite).
+- [x] Order per value: user → team → `hub_settings.json` default; read at every spawn, no Hub restart.
+- [x] Values validated (`512M`/`1G`/`2T`, `50%`/`200%`); the page refuses bad ones, a bad group property is skipped with a log warning.
+- [x] The Hub log says which limit applied and from where; `/hub/monitoring` already shows the real cgroup limit. Tests; README.
+- [ ] Check on a cluster: set a team property and a user override, restart the user's server, `/hub/monitoring` shows the new limit.
 
 ## Make Vault clear: how it works and how to use it
 

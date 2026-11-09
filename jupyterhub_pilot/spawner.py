@@ -58,6 +58,7 @@ except (ImportError, ModuleNotFoundError):
     _paramiko_ssh_exc = getattr(paramiko, "ssh_exception", paramiko)  # type: ignore
 from jupyterhub.spawner import Spawner
 
+from jupyterhub_pilot import limits as _limits
 from jupyterhub_pilot.admin import RBACManager
 from jupyterhub_pilot.paths import CONFIG_DIR, GET_PORT_CMD
 from jupyterhub_pilot.session_store import SessionStore
@@ -386,26 +387,27 @@ class CustomSpawner(Spawner):
         """
         username: str = self.user.name
 
-        # ── Task 2: cache cgroup limits for use in start() ────────────────────
-        limits: Optional[Dict[str, Any]] = hub_settings.get("resource_limits")
-        if limits:
-            self._memory_max: Optional[str] = limits.get("memory_max")
-            self._cpu_quota: Optional[str] = limits.get("cpu_quota")
-            self.log.info(
-                "CustomSpawner: cgroups v2 limits for '%s': "
-                "MemoryMax=%s CPUQuota=%s",
-                username,
-                self._memory_max,
-                self._cpu_quota,
-            )
-        else:
-            self._memory_max = None
-            self._cpu_quota = None
-            self.log.debug(
-                "CustomSpawner: no resource_limits configured — "
-                "launching '%s' without cgroup wrapping.",
-                username,
-            )
+        # ── Task 2: cgroup limits for start(): user → team → hub_settings default ──
+        team_props = None
+        if self.user.groups:  # start() uses the first group as the team
+            props = getattr(self.user.groups[0], "properties", None)
+            team_props = props if isinstance(props, dict) else None
+        resolved = _limits.resolve(
+            _store.get_user_limits(username),
+            team_props,
+            hub_settings.get("resource_limits"),
+            lambda msg: self.log.warning("CustomSpawner: '%s': %s", username, msg),
+        )
+        self._memory_max: Optional[str] = resolved["memory_max"][0]
+        self._cpu_quota: Optional[str] = resolved["cpu_quota"][0]
+        self.log.info(
+            "CustomSpawner: limits for '%s': MemoryMax=%s (%s) CPUQuota=%s (%s)",
+            username,
+            self._memory_max,
+            resolved["memory_max"][1],
+            self._cpu_quota,
+            resolved["cpu_quota"][1],
+        )
 
         # ── Task 3: Vault secret injection ────────────────────────────────────
         if hub_settings.get("vault_enabled", False):
@@ -842,6 +844,7 @@ class CustomSpawner(Spawner):
     async def delete_forever(self) -> None:
         """Hub user deleted: remove their Linux account on the team's worker (``on_user_delete``)."""
         try:
+            _store.delete_user_limits(self.user.name)
             await asyncio.to_thread(self._delete_linux_user)
         except Exception as exc:  # noqa: BLE001
             self.log.error("CustomSpawner: could not delete Linux user for '%s': %s", self.user.name, exc)

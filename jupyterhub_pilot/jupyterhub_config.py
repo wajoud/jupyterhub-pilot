@@ -11,13 +11,14 @@ import sys
 
 from oauthenticator.google import GoogleOAuthenticator
 
+from jupyterhub_pilot.limits import LimitsPageHandler
 from jupyterhub_pilot.monitoring_handler import (
     AgentWebSocketHandler,
     BrowserWebSocketHandler,
     MonitoringPageHandler,
 )
 from jupyterhub_pilot.paths import CONFIG_DIR, PACKAGE_DIR
-from jupyterhub_pilot.spawner import CustomSpawner, worker_ip_for_group
+from jupyterhub_pilot.spawner import _store, CustomSpawner, worker_ip_for_group
 
 with open(os.path.join(CONFIG_DIR, "hub_settings.json"), "r") as f:
     hub_settings = json.load(f)
@@ -129,4 +130,6 @@ c.JupyterHub.extra_handlers = [
     (r"/monitoring/browser", BrowserWebSocketHandler, {"worker_ip_for_group": worker_ip_for_group}),
     # Task 4: Monitoring — Dashboard page (all authenticated users)
     (r"/monitoring", MonitoringPageHandler),
+    # Per-user RAM/CPU limits (admins only; team limits live in group properties)
+    (r"/limits", LimitsPageHandler, {"store": _store}),
 ]

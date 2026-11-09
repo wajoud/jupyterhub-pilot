@@ -1,0 +1,59 @@
+{# Admin page for per-user RAM/CPU limits (jupyterhub_pilot/limits.py). #}
+{% extends "page.html" %}
+{% block main %}
+<div class="container">
+  <h1>RAM and CPU limits</h1>
+  <p>
+    Each value is taken from the first place that sets it: the user (this page),
+    their team (<a href="{{ base_url }}admin#/groups">Admin → Groups</a> → the team → properties
+    <code>memory_max</code> / <code>cpu_quota</code>), then <code>resource_limits</code> in
+    <code>hub_settings.json</code>. Changes apply on the user's next server start.
+  </p>
+  {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+  {% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
+
+  <form method="post" class="row g-2 align-items-end mb-4">
+    <input type="hidden" name="_xsrf" value="{{ xsrf_token }}" />
+    <div class="col-sm-4">
+      <label for="username" class="form-label">User</label>
+      <input id="username" name="username" class="form-control" required />
+    </div>
+    <div class="col-sm-3">
+      <label for="memory_max" class="form-label">memory_max</label>
+      <input id="memory_max" name="memory_max" class="form-control" placeholder="2G" />
+    </div>
+    <div class="col-sm-3">
+      <label for="cpu_quota" class="form-label">cpu_quota</label>
+      <input id="cpu_quota" name="cpu_quota" class="form-control" placeholder="100%" />
+    </div>
+    <div class="col-sm-2">
+      <button type="submit" class="btn btn-primary w-100">Save</button>
+    </div>
+  </form>
+
+  <h2 class="h4">Per-user limits</h2>
+  {% if overrides %}
+  <table class="table">
+    <thead><tr><th scope="col">User</th><th scope="col">memory_max</th><th scope="col">cpu_quota</th><th scope="col"></th></tr></thead>
+    <tbody>
+    {% for row in overrides %}
+      <tr>
+        <td>{{ row.username }}</td>
+        <td>{{ row.memory_max or "(team / default)" }}</td>
+        <td>{{ row.cpu_quota or "(team / default)" }}</td>
+        <td>
+          <form method="post">
+            <input type="hidden" name="_xsrf" value="{{ xsrf_token }}" />
+            <input type="hidden" name="username" value="{{ row.username }}" />
+            <button type="submit" name="action" value="clear" class="btn btn-sm btn-outline-danger">Clear</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>None. Every user gets their team's or the default limit.</p>
+  {% endif %}
+</div>
+{% endblock main %}

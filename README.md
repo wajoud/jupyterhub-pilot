@@ -276,6 +276,7 @@ Installs from before 0.6.0 have no `idle_cull` key, so culling stays off until y
 | `hub_settings.json` (IPs, admins, domain, limits, idle timeout, Vault) | Yes: restart the Hub |
 | `user_mapping.json` + re-seeded the DB (add/change a worker) | No |
 | Groups or group members in the Admin panel | No (the user restarts their own server to move workers) |
+| A user's or team's limit (Limits page, group properties) | No (applies on the user's next server start) |
 | The agent token | Yes: Hub and every worker's metrics agent |
 
 ## Add users and teams
@@ -431,7 +432,22 @@ Agent status, on a worker: `sudo systemctl status jupyterhub_pilot-metrics`. Mor
 
 ### Change the per-user RAM and CPU limit
 
-Every user's notebook server gets the same limit (default `1G` RAM, `50%` of one core); a kernel over `memory_max` is killed, the worker and other users are not affected. The limit is per user, not per worker, so size it for how many users share a worker (5 users on a 2 GiB worker: about `300M`). To change it, on the Hub:
+A kernel over `memory_max` is killed; the worker and other users are not affected. The limit is per user, not per worker, so size it for how many users share a worker (5 users on a 2 GiB worker: about `300M`).
+
+Each value (`memory_max`, `cpu_quota`) comes from the first place that sets it:
+
+1. **One user:** **Limits** in the nav bar (admins only, `/hub/limits`): enter the user name and a value, **Save**. **Clear** goes back to the team or default limit.
+2. **A team:** **Admin** → **Groups** → the team → **Properties**: add `memory_max` = `2G` and/or `cpu_quota` = `100%`, then **Apply**.
+3. **Everyone else:** `resource_limits` in `hub_settings.json` (default `1G` RAM, `50%` of one core).
+
+Changes from 1 and 2 apply on the user's next server start, with no Hub restart. Values:
+
+- `memory_max`: `300M`, `512M`, `1G`, `2G`, ... (`M`, `G` or `T` required)
+- `cpu_quota`: `50%` = half a core, `100%` = one core, `200%` = two cores
+
+The Limits page refuses a bad value. A bad team property is skipped with a warning in the Hub log (`team limit ignored`) and the default is used. The Hub log says which limit a server got and where it came from: `limits for 'alice': MemoryMax=2G (team) CPUQuota=50% (default)`. `/hub/monitoring` shows each user's memory against the limit their server really has.
+
+To change the default for everyone, on the Hub:
 
 ```bash
 F=/opt/jupyterhub-pilot/hub_settings.json
@@ -440,11 +456,7 @@ sudo jq .resource_limits $F      # check
 sudo systemctl restart jupyterhub
 ```
 
-- `memory_max`: `300M`, `512M`, `1G`, `2G`, ...
-- `cpu_quota`: `50%` = half a core, `100%` = one core, `200%` = two cores
-- No limits: `sudo jq '.resource_limits = null' ...`
-
-The restart stops every running notebook server; new limits apply to servers started after it. Check a user's row on `/hub/monitoring`, which shows memory against the limit.
+No default limit: `sudo jq '.resource_limits = null' ...`. The restart stops every running notebook server; the new default applies to servers started after it.
 
 Environment variables:
 

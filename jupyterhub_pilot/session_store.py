@@ -29,7 +29,7 @@ import logging
 import sqlite3
 import threading
 from contextlib import contextmanager
-from typing import Any, Dict, Generator, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 log = logging.getLogger("jupyterhub")
 
@@ -60,6 +60,15 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     role        TEXT    DEFAULT 'user',
     status      TEXT    DEFAULT 'stopped',
     group_name  TEXT
+);
+"""
+
+# Admin-set per-user limits (/hub/limits); NULL = use the team's or the default.
+_DDL_USER_LIMITS = """
+CREATE TABLE IF NOT EXISTS user_limits (
+    username    TEXT PRIMARY KEY,
+    memory_max  TEXT,
+    cpu_quota   TEXT
 );
 """
 
@@ -150,6 +159,7 @@ class SessionStore:
             conn.executescript(_PRAGMA_FAST)
             conn.execute(_DDL_TEAM_MAPPINGS)
             conn.execute(_DDL_USER_SESSIONS)
+            conn.execute(_DDL_USER_LIMITS)
             # Migrate DBs created before admin_ssh_user existed.
             cols = {r["name"] for r in conn.execute("PRAGMA table_info(team_mappings)")}
             if "admin_ssh_user" not in cols:
@@ -319,3 +329,36 @@ class SessionStore:
             conn.execute("DELETE FROM user_sessions WHERE username = ?", (username,))
             conn.commit()
         log.info("SessionStore: session cleared for '%s'", username)
+
+    # ── Per-user limits ───────────────────────────────────────────────────────
+
+    def get_user_limits(self, username: str) -> Optional[Dict[str, Any]]:
+        """Admin-set limits for *username* (``memory_max``, ``cpu_quota``), or None."""
+        try:
+            row = self._get_read_conn().execute(
+                "SELECT memory_max, cpu_quota FROM user_limits WHERE username = ?", (username,)
+            ).fetchone()
+            return dict(row) if row else None
+        except Exception as exc:  # noqa: BLE001
+            log.error("SessionStore.get_user_limits(%s) failed: %s", username, exc)
+            self._read_conn = None
+            return None
+
+    def list_user_limits(self) -> List[Dict[str, Any]]:
+        rows = self._get_read_conn().execute(
+            "SELECT username, memory_max, cpu_quota FROM user_limits ORDER BY username"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def set_user_limits(self, username: str, memory_max: Optional[str], cpu_quota: Optional[str]) -> None:
+        with _write_lock, self._write_conn() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO user_limits (username, memory_max, cpu_quota) VALUES (?, ?, ?)",
+                (username, memory_max, cpu_quota),
+            )
+            conn.commit()
+
+    def delete_user_limits(self, username: str) -> None:
+        with _write_lock, self._write_conn() as conn:
+            conn.execute("DELETE FROM user_limits WHERE username = ?", (username,))
+            conn.commit()
