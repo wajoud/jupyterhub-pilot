@@ -162,6 +162,7 @@ Ranked by value for effort. Each needs a decision before it becomes real work.
 ### Later (bigger)
 - [ ] **Worker sizes per team:** bigger or GPU workers for some teams; stop idle workers to save cost.
 - [ ] **Share results:** publish a notebook as read-only HTML or a Voilà dashboard.
-- [ ] **Data-aware AI magics:** give `%do` / `%fix` the columns and dtypes of DataFrames in memory; add `%explain` for results.
+- [x] **Data-aware AI magics:** the context lists pandas/polars DataFrames with shape and column dtypes (first 30); new `%explain [question]`. Docs + tests.
+  - [ ] Check with a real model on a cluster that `%do` uses the real column names.
 - [ ] **Real-time collaboration:** `jupyter-collaboration` (needs JupyterLab, see the Terminal/JupyterLab section).
 - [ ] **Usage report per team:** monthly CPU/RAM per team from the monitoring data.

@@ -7,7 +7,7 @@
 ```python
 # In any Jupyter cell:
 %load_ext jupyterhub_pilot.extension
-# ✅ JupyterHub-Pilot loaded. Available: %do, %fix, %review, %rework
+# ✅ JupyterHub-Pilot loaded. Available: %do, %fix, %review, %rework, %explain
 ```
 
 Or auto-load in every session:
@@ -98,6 +98,20 @@ df.groupby('date')['revenue'].sum().plot()
   • No security concerns found
 ============================================================
 ```
+
+---
+
+## `%explain` — what does this result mean?
+
+```python
+df.groupby("region")["amount"].describe()
+%explain
+%explain why is the north region's std so high?
+```
+
+Answers in a few plain bullet points, using the last cells, their output and the variables in memory. No code is written.
+
+**DataFrames in the context.** All magics (`%do`, `%fix`, `%rework`, `%explain`) see the shape and column dtypes of pandas and polars DataFrames in memory (first 30 columns), e.g. `df: DataFrame 1200×3: region (object), amount (float64), date (datetime64[ns])`. So `%do plot amount by region` uses your real column names. Only names and types are sent to the LLM, never the data itself (except what a cell already printed).
 
 ---
 

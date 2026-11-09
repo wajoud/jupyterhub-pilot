@@ -405,6 +405,9 @@ Load the magics in a notebook:
 | `%fix` | Reads the last error and proposes fixed code |
 | `%review` | Reviews recent cells for bugs and style |
 | `%rework <instruction>` | Rewrites the last cell as instructed |
+| `%explain [question]` | Explains the last result in plain words |
+
+The magics see the column names and dtypes of DataFrames in memory, so `%do plot amount by region` uses your real columns.
 
 The LLM backend is set in `~/.jupyterhub-pilot/config.json` (per user) or `/etc/jupyterhub-pilot/config.json` (whole worker). The default is a local Ollama at `http://localhost:11434`. Setup, auto-loading for all users and cloud/MCP backends: [AI Magic Commands](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/AI_MAGICS.md).
 
