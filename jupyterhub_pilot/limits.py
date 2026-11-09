@@ -53,7 +53,7 @@ def resolve(
 
 
 class LimitsPageHandler(BaseHandler):
-    """Admin-only ``/hub/limits``: list, set and clear per-user limits."""
+    """Admin-only ``/hub/limits``: list, set and clear per-user limits and the per-user terminal switch."""
 
     def initialize(self, store: Any) -> None:
         self.store = store
@@ -83,11 +83,12 @@ class LimitsPageHandler(BaseHandler):
             self.store.delete_user_limits(username)
             return await self._render(message=f"{username}: back to team / default limits.")
         values = {k: self.get_body_argument(k, "").strip() or None for k in KEYS}
+        terminals_off = self.get_body_argument("terminals_off", "") == "on"  # an unticked checkbox sends nothing
         errors = [e for k, v in values.items() if v is not None and (e := check(k, v))]
         if errors:
             self.set_status(400)
             return await self._render(error="; ".join(errors))
-        if not any(values.values()):
-            return await self._render(error="Set memory_max, cpu_quota, or both (or use Clear).")
-        self.store.set_user_limits(username, values["memory_max"], values["cpu_quota"])
+        if not any(values.values()) and not terminals_off:
+            return await self._render(error="Set memory_max, cpu_quota or Terminal off (or use Clear).")
+        self.store.set_user_limits(username, values["memory_max"], values["cpu_quota"], terminals_off)
         await self._render(message=f"{username}: saved. Applies on their next server start.")

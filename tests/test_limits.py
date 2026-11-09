@@ -49,8 +49,8 @@ def store(monkeypatch):
 
 def test_store_roundtrip(store):
     store.set_user_limits("bob", "2G", None)
-    assert store.get_user_limits("bob") == {"memory_max": "2G", "cpu_quota": None}
-    assert store.list_user_limits() == [{"username": "bob", "memory_max": "2G", "cpu_quota": None}]
+    assert store.get_user_limits("bob") == {"memory_max": "2G", "cpu_quota": None, "terminals_off": 0}
+    assert store.list_user_limits() == [{"username": "bob", "memory_max": "2G", "cpu_quota": None, "terminals_off": 0}]
     store.delete_user_limits("bob")
     assert store.get_user_limits("bob") is None
 
@@ -83,7 +83,7 @@ def _handler(store, admin=True, **form):
 async def test_page_saves_valid_limits(store):
     h = _handler(store, username="bob", memory_max="2G", cpu_quota="")
     await limits.LimitsPageHandler.post.__wrapped__(h)
-    assert store.get_user_limits("bob") == {"memory_max": "2G", "cpu_quota": None}
+    assert store.get_user_limits("bob") == {"memory_max": "2G", "cpu_quota": None, "terminals_off": 0}
 
 
 @pytest.mark.anyio
@@ -106,3 +106,52 @@ async def test_page_clear(store):
 async def test_page_admin_only(store):
     with pytest.raises(limits.web.HTTPError):
         await limits.LimitsPageHandler.post.__wrapped__(_handler(store, admin=False, username="bob", memory_max="2G"))
+
+
+@pytest.mark.anyio
+async def test_page_saves_terminal_off_alone(store):
+    h = _handler(store, username="bob", memory_max="", cpu_quota="", terminals_off="on")
+    await limits.LimitsPageHandler.post.__wrapped__(h)
+    assert store.get_user_limits("bob") == {"memory_max": None, "cpu_quota": None, "terminals_off": 1}
+
+
+@pytest.mark.anyio
+async def test_page_saving_limits_without_the_box_turns_terminal_back_on(store):
+    store.set_user_limits("bob", None, None, True)
+    await limits.LimitsPageHandler.post.__wrapped__(_handler(store, username="bob", memory_max="2G"))
+    assert store.get_user_limits("bob")["terminals_off"] == 0
+
+
+@pytest.mark.anyio
+async def test_page_refuses_empty_save(store):
+    h = _handler(store, username="bob")
+    await limits.LimitsPageHandler.post.__wrapped__(h)
+    assert "Terminal off" in h.render_template.call_args.kwargs["error"]
+    assert store.get_user_limits("bob") is None
+
+
+def test_old_user_limits_table_gets_terminals_off_column(tmp_path):
+    import sqlite3
+
+    db = str(tmp_path / "old.db")
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE user_limits (username TEXT PRIMARY KEY, memory_max TEXT, cpu_quota TEXT)")
+    conn.execute("INSERT INTO user_limits VALUES ('bob', '2G', NULL)")
+    conn.commit()
+    conn.close()
+    s = SessionStore(db)
+    s.init_db()
+    assert s.get_user_limits("bob") == {"memory_max": "2G", "cpu_quota": None, "terminals_off": 0}
+
+
+@pytest.mark.anyio
+async def test_spawner_reads_terminal_off(store, monkeypatch):
+    monkeypatch.setattr(spawner, "hub_settings", {})
+    inst = spawner.CustomSpawner()
+    inst.user.name = "bob"
+    inst.user.groups = []
+    await inst._prepare_spawn()
+    assert inst._terminals_off is False
+    store.set_user_limits("bob", None, None, True)
+    await inst._prepare_spawn()
+    assert inst._terminals_off is True
