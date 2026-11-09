@@ -492,3 +492,39 @@ async def test_terminals_switch(mock_spawner_instance, setting, flag):
         await mock_spawner_instance.start()
     script = stdin.write.call_args[0][0]
     assert ("--ServerApp.terminals_enabled=False" in script) is flag
+
+
+def _jit_script(server, team="team_alpha"):
+    inst = CustomSpawner()
+    inst.user.name = "alice"
+    g = MagicMock()
+    g.name = team
+    inst.user.groups = [g]
+    ssh = _jit_ssh()
+    with patch.object(spawner.paramiko, "SSHClient", return_value=ssh):
+        inst._provision_user_jit(server)
+    return inst, ssh.exec_command.call_args.args[0]
+
+
+def test_jit_sets_up_team_and_shared_folders():
+    _, script = _jit_script(JIT_SERVER)
+    assert "sudo groupadd -f team_alpha" in script
+    assert "sudo usermod -aG team_alpha alice" in script
+    assert "sudo chmod 2770 /data/team_alpha" in script
+    assert "ln -sfn /data/team_alpha /home/alice/notebook/team" in script
+    assert "ln -sfn /data/shared /home/alice/notebook/shared" in script
+    assert "[ ! -L /home/alice/notebook/team ] ||" in script  # a real 'team' folder is left alone
+    # Team setup runs for existing users too, so it must come after the "create user" block.
+    assert script.index("fi\n") < script.index("groupadd")
+
+
+def test_jit_skips_folders_for_shared_ssh_user():
+    _, script = _jit_script({**JIT_SERVER, "ssh_user": "teamacct"})
+    assert "/data/" not in script
+
+
+def test_jit_bad_team_name_gets_shared_folder_only():
+    inst, script = _jit_script(JIT_SERVER, team="Team Alpha;rm")
+    assert "groupadd" not in script and "rm" not in script.split("fi\n", 1)[1]
+    assert "/data/shared" in script
+    inst.log.warning.assert_called()

@@ -427,6 +427,34 @@ sudo systemctl restart jupyterhub
 
 This does not stop users running shell commands: a kernel can do the same with `!ls` or `os.system`. It only removes the interactive shell.
 
+### Team folder and shared data
+
+Every user's file browser has two links, set up on each worker at server start:
+
+| Folder | Path on the worker | Who can write |
+|---|---|---|
+| `team` | `/data/<team>` | Everyone in the team (a Linux group with the team's name; new files stay team-writable) |
+| `shared` | `/data/shared` | Admins only (read-only for users): put reference datasets here |
+
+```bash
+# On a worker, as the admin user: publish a dataset to every user of that worker
+sudo cp sales_2026.parquet /data/shared/
+```
+
+A user added to a team gets the `team` link on their next server start. If they already had their own file or folder named `team` or `shared` in `~/notebook`, it is left alone and no link is made. Teams with a shared `ssh_user` don't get the links. `/data` lives on the worker's disk, so it is not shared between workers and not backed up.
+
+### Data packages
+
+Every worker has the same data stack (part of the `worker` install): pandas, polars, DuckDB, scikit-learn, matplotlib, plotly and `jupysql`, so a notebook runs the same on any team's worker. SQL over files with DuckDB:
+
+```python
+%load_ext sql
+%sql duckdb://
+%sql SELECT region, sum(amount) FROM 'shared/sales_2026.parquet' GROUP BY region
+```
+
+The packages are installed system-wide with minimum versions. Run `sudo jupyterhub-pilot upgrade` on all workers at the same time to keep them on the same versions. Users can add their own in a terminal or a `!` cell: `pip install --user --break-system-packages <package>` (Ubuntu refuses plain `pip install` on the system Python; `--user` keeps it in their home).
+
 ## Monitoring dashboard
 
 Open `https://hub.example.com/hub/monitoring` (or **Monitoring** in the Hub's nav bar).

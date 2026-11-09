@@ -147,8 +147,10 @@ Ranked by value for effort. Each needs a decision before it becomes real work.
 - [x] **Idle culling:** `jupyterhub-idle-culler` as a Hub service, `idle_cull` in `hub_settings.json` (default 3 h, on for new installs, off for old ones until the key is added). Branch `feature/todo-0.6.0`.
   - [ ] Check on a cluster: README → Test a cluster step 5 (server stopped after a 120 s timeout).
   - [ ] Check whether a kernel that runs a long silent cell (no output) keeps the server alive; if not, keep the "print progress" advice in README or raise the default.
-- [ ] **Shared team folder:** `/data/<team>` writable by the team (a Linux group per team, users added at spawn) and a read-only `/data/shared` for reference datasets; set up by `install-worker`.
-- [ ] **Same data stack on every worker:** pinned pandas, polars, DuckDB, scikit-learn, matplotlib/plotly, `jupysql`, so a notebook runs the same on any team's worker.
+- [x] **Shared team folder:** `/data/<team>` (Linux group per team, setgid + default ACL) and read-only `/data/shared`, created and linked into `~/notebook` at every server start (JIT step), so no worker re-install. `install-worker` adds the `acl` package.
+  - [ ] Check on a cluster: two users of one team both write `team/`; a user of another team on the same worker can't; `shared/` is read-only.
+- [x] **Same data stack on every worker:** pandas, polars, DuckDB (+ `duckdb-engine`), scikit-learn, matplotlib, plotly, `jupysql` in the `worker` extra (minimum versions, not exact pins; `upgrade` keeps workers together).
+  - [ ] Check worker disk after install (~600 MB more) and that `%sql duckdb://` works.
 
 ### Next (protect work, reach data)
 - [ ] **Notebook backups:** home folders live only on the worker disk; nightly sync to S3 or EBS snapshots, or EFS homes (also makes moving a team to a new worker free).

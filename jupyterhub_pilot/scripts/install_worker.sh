@@ -16,9 +16,9 @@ fi
 echo "1. OS packages"
 if command -v apt-get >/dev/null; then
     apt-get update -y
-    apt-get install -y net-tools psmisc
+    apt-get install -y net-tools psmisc acl
 elif command -v dnf >/dev/null; then
-    dnf install -y net-tools psmisc
+    dnf install -y net-tools psmisc acl
 else
     echo "❌ Needs apt (Ubuntu) or dnf (Amazon Linux 2023)."
     exit 1

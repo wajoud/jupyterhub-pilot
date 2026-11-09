@@ -276,27 +276,28 @@ class CustomSpawner(Spawner):
         u = shlex.quote(target_user)
         home = shlex.quote(f"/home/{target_user}")
         admin_keys = shlex.quote(f"/home/{admin_user}/.ssh/authorized_keys")
+        team = self.user.groups[0].name if self.user.groups else ""
+        # A shared ssh_user team works in that account's home, not /home/<user>: no links.
+        folders = "" if server_info.get("ssh_user") else self._team_folder_script(target_user, team)
         script = f"""
-        if id {u} &>/dev/null; then
-            exit 0
+        if ! id {u} &>/dev/null; then
+            echo "Creating user {target_user}..."
+            # Amazon Linux's adduser is plain useradd and rejects the Debian flags.
+            sudo adduser --allow-bad-names --disabled-password --gecos "" {u} \\
+                || sudo useradd -m -s /bin/bash {u}
+            sudo loginctl enable-linger {u}
+
+            sudo -u {u} mkdir -p {home}/notebook
+            sudo -u {u} mkdir -p {home}/.ssh
+
+            sudo cp {admin_keys} {home}/.ssh/authorized_keys
+            sudo chown -R {u}:{u} {home}/.ssh
+            sudo chmod 600 {home}/.ssh/authorized_keys
         fi
-
-        echo "Creating user {target_user}..."
-        # Amazon Linux's adduser is plain useradd and rejects the Debian flags.
-        sudo adduser --allow-bad-names --disabled-password --gecos "" {u} \\
-            || sudo useradd -m -s /bin/bash {u}
-        sudo loginctl enable-linger {u}
-
-        sudo -u {u} mkdir -p {home}/notebook
-        sudo -u {u} mkdir -p {home}/.ssh
-
-        sudo cp {admin_keys} {home}/.ssh/authorized_keys
-        sudo chown -R {u}:{u} {home}/.ssh
-        sudo chmod 600 {home}/.ssh/authorized_keys
-
         # jupyterhub, notebook and the AI magics are installed once per worker
         # by install_worker.sh; installing them here took minutes and blew
         # through JupyterHub's 60 s start_timeout.
+        {folders}
         """
 
         try:
@@ -309,6 +310,40 @@ class CustomSpawner(Spawner):
                 self.log.info(f"JIT Provisioning succeeded for user {target_user}.")
         finally:
             ssh.close()
+
+    def _team_folder_script(self, os_user: str, team: str) -> str:
+        """Shell lines (run with sudo rights) for /data/<team> and /data/shared, linked into ~/notebook.
+
+        /data/<team>: read/write for the team's Linux group (one per team, created here).
+        /data/shared: read-only reference data; admins copy files there with sudo.
+        Runs on every start, so a user added to a team gets the folder on their next start.
+        """
+        if not _OS_USER_RE.fullmatch(team):  # team names become Linux group names
+            if team:
+                self.log.warning("CustomSpawner: team '%s' is not a valid Linux group name; no team folder", team)
+            team = ""
+        u = shlex.quote(os_user)
+        nb = f"/home/{os_user}/notebook"
+
+        def link(target: str, name: str) -> str:
+            # Leave a real file or folder the user already has under that name alone.
+            return f"[ -e {nb}/{name} ] && [ ! -L {nb}/{name} ] || sudo -u {u} ln -sfn {target} {nb}/{name}"
+
+        lines = [
+            "sudo mkdir -p /data/shared && sudo chmod 755 /data/shared",
+            link("/data/shared", "shared"),
+        ]
+        if team:
+            g = shlex.quote(team)
+            lines += [
+                f"sudo groupadd -f {g}",
+                f"id -nG {u} | grep -qw {g} || sudo usermod -aG {g} {u}",
+                f"sudo mkdir -p /data/{team} && sudo chgrp {g} /data/{team} && sudo chmod 2770 /data/{team}",
+                # New files stay group-writable whatever the user's umask (needs the acl tools).
+                f"sudo setfacl -d -m g::rwX /data/{team} 2>/dev/null || true",
+                link(f"/data/{team}", "team"),
+            ]
+        return "\n        ".join(lines)
 
     def _open_admin_ssh(self, server_info: Dict[str, Any]) -> Optional[paramiko.SSHClient]:
         """SSH to the worker as ``admin_ssh_user`` (has sudo); None if it fails (logged)."""
