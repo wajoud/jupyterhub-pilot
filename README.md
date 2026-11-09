@@ -443,6 +443,28 @@ sudo cp sales_2026.parquet /data/shared/
 
 A user added to a team gets the `team` link on their next server start. If they already had their own file or folder named `team` or `shared` in `~/notebook`, it is left alone and no link is made. Teams with a shared `ssh_user` don't get the links. `/data` lives on the worker's disk, so it is not shared between workers and not backed up.
 
+### Scheduled notebooks
+
+Run a notebook on a timer, with no browser or server open. It runs on the team's worker as the user, under their RAM/CPU limit and with their Vault secrets:
+
+```python
+%load_ext jupyterhub_pilot.schedule
+%schedule add daily report.ipynb                 # every day at 00:00 (worker's clock, usually UTC)
+%schedule add "Mon..Fri 07:30" report.ipynb --keep 10
+%schedule list                                    # name, when, next run, last result
+%schedule run report                              # run now
+%schedule pause report      /  %schedule resume report
+%schedule delete report                           # past results are kept
+```
+
+- **When:** systemd calendar times: `hourly`, `daily`, `weekly`, `"Mon..Fri 08:00"`, `"*-*-* 02:30"`, `"*-*-01 06:00"` (monthly). `man systemd.time` has the full syntax; a bad one is refused with examples.
+- **Results:** each run saves the executed notebook next to the original as `report-20261109-0730.ipynb`, or `report-20261109-0730-FAILED.ipynb` if a cell raised (open it to see the error). The last 5 (`--keep N`) are kept.
+- **Restarts:** jobs live in the user's systemd timers on the worker (`~/.config/systemd/user/jhp-*`), so they survive Hub and worker restarts. A run missed while the worker was off runs when it comes back.
+- The limit and secrets are copied when you run `%schedule add`. After your limit or secrets change, run the same `add` again to update the job.
+- Deleting the user removes their jobs with their Linux account.
+
+Admins, on a worker: every job is `sudo sh -c 'ls /home/*/.config/systemd/user/jhp-*.timer'`, and a user's run log is `sudo journalctl _UID=$(id -u <user>) --user-unit 'jhp-*'` (or `systemctl --user` as that user).
+
 ### Data packages
 
 Every worker has the same data stack (part of the `worker` install): pandas, polars, DuckDB, scikit-learn, matplotlib, plotly and `jupysql`, so a notebook runs the same on any team's worker. SQL over files with DuckDB:

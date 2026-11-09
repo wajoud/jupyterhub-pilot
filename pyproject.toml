@@ -75,6 +75,7 @@ worker = [
     "scikit-learn>=1.5",
     "matplotlib>=3.8",
     "plotly>=5.20",
+    "papermill>=2.6",  # %schedule runs notebooks with it
 ]
 # Install AI features: pip install jupyterhub_pilot[ai]
 ai = [

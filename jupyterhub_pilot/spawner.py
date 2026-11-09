@@ -454,6 +454,8 @@ class CustomSpawner(Spawner):
             if secrets:
                 # Merge into self.environment; get_env() picks this up at launch
                 self.environment.update(secrets)
+                # Names only: lets %schedule give scheduled runs the same secrets.
+                self.environment["JUPYTERHUB_PILOT_SECRET_KEYS"] = ",".join(sorted(secrets))
                 self.log.info(
                     "CustomSpawner: Vault injected %d secret(s) for '%s'.",
                     len(secrets),

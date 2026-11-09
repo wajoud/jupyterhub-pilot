@@ -122,12 +122,14 @@ Today an upgrade is `pip install -U` + a restart (README → Upgrading). That on
 
 Users want to pick an `.ipynb` and have it run on a schedule (every night, every hour), without keeping a browser or kernel open.
 
-- [ ] Decide the engine. Airflow is the full option (DAGs, retries, history UI) but is heavy: its own DB, scheduler and web server. Lighter options to compare first: `papermill` run by a systemd timer on the team's worker, or the `jupyter-scheduler` extension (check it works in Notebook 7).
-- [ ] The run must happen **on the user's team worker, as that user**, under their RAM/CPU limit and with their Vault secrets, never on the Hub and never as root. With Airflow: one Airflow on the Hub (or its own VM) that SSHes to the worker and runs `papermill` as the user (same path as the spawner).
-- [ ] How a user schedules: a `%schedule "0 2 * * *"` magic in the notebook, or a Schedule button; list / pause / delete their own jobs. Admins see all jobs.
-- [ ] Output: save the run's executed notebook next to the original (`<name>-<date>.ipynb`) and keep N runs; failed runs visible to the user (and on `/hub/monitoring`).
-- [ ] Jobs survive Hub/worker restarts; a run whose worker is down is retried or marked failed, not lost silently. Delete the user → delete their jobs.
-- [ ] Docs (README section + Airflow setup if chosen) and a step in Test a cluster.
+- [x] Engine: `papermill` + systemd **user** timers on the team's worker (no Airflow: no extra DB/scheduler/web server, and the run is already on the right machine as the right user). `jupyterhub_pilot/schedule.py`.
+- [x] Runs on the user's worker as the user, under the limit of the server that scheduled it (`MemoryMax`/`CPUQuota` from the kernel's cgroup), with its Vault secrets (`600` env file; the spawner now passes `JUPYTERHUB_PILOT_SECRET_KEYS` names).
+- [x] `%schedule add <when> <nb> [--keep N]`, `list`, `run`, `pause`, `resume`, `delete`; admins list all jobs on a worker (README command).
+- [x] Output `<name>-<YYYYmmdd-HHMM>.ipynb` (or `-FAILED`) next to the original, last N kept; `list` shows the last result.
+- [x] Survives restarts (linger, `Persistent=true` catches up missed runs). Delete the user → account and timers gone.
+- [x] Docs: README → Scheduled notebooks; `docs/SECURITY.md` (env file). Tests (units mocked).
+- [ ] Check on a cluster: `%schedule add "*:0/2" test.ipynb` (every 2 minutes), result appears, `-FAILED` on a raising cell, a 2 GB cell is killed under a `1G` limit, job runs again after a worker reboot, `systemd-analyze` exists on Ubuntu 26.04 and AL2023.
+- [ ] Later: failed runs on `/hub/monitoring`; a Schedule button in the Notebook UI.
 
 ## Terminal access and JupyterLab
 

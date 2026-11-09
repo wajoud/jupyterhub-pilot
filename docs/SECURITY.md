@@ -103,6 +103,8 @@ alice clicks Start My Server
 | Root on the worker | The user's secrets while their server runs |
 | Root on the Hub | **Every** user's secrets: the Hub's Vault token is in `/etc/jupyterhub-pilot/hub.env` (root only). Give it read-only access to this one path, nothing else |
 
+**Scheduled notebooks** (`%schedule`) are the one place a secret is written to disk: `%schedule add` saves the secrets the server got into `~/.config/jupyterhub-pilot/jobs/<job>.env` (mode `600`, only the user and root can read it) so the timed run gets them too. `%schedule delete` removes the file.
+
 A user can print their own secret in a notebook and save it in the `.ipynb`. Tell users to read them with `os.environ`, never to print them.
 
 ### Step 1: a Vault server
