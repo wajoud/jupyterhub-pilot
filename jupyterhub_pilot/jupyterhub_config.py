@@ -7,16 +7,18 @@
 
 import json
 import os
+import sys
 
 from oauthenticator.google import GoogleOAuthenticator
 
+from jupyterhub_pilot.limits import LimitsPageHandler
 from jupyterhub_pilot.monitoring_handler import (
     AgentWebSocketHandler,
     BrowserWebSocketHandler,
     MonitoringPageHandler,
 )
 from jupyterhub_pilot.paths import CONFIG_DIR, PACKAGE_DIR
-from jupyterhub_pilot.spawner import CustomSpawner, worker_ip_for_group
+from jupyterhub_pilot.spawner import _store, CustomSpawner, worker_ip_for_group
 
 with open(os.path.join(CONFIG_DIR, "hub_settings.json"), "r") as f:
     hub_settings = json.load(f)
@@ -79,6 +81,33 @@ c.JupyterHub.spawner_class = CustomSpawner
 c.Spawner.default_url = "/tree"
 
 # -------------------------------------------------
+# Idle culling: stop servers nobody used for `timeout` seconds (frees worker RAM)
+# -------------------------------------------------
+# Missing or null in hub_settings.json = off. Files stay; only in-memory state is lost.
+idle_cull = hub_settings.get("idle_cull")
+if idle_cull:
+    c.JupyterHub.services = [
+        {
+            "name": "idle-culler",
+            "command": [
+                sys.executable,
+                "-m",
+                "jupyterhub_idle_culler",
+                f"--timeout={int(idle_cull['timeout'])}",
+                f"--cull-every={int(idle_cull.get('every', 300))}",
+            ],
+        }
+    ]
+    # Stop servers only; never --cull-users (that would delete Hub users).
+    c.JupyterHub.load_roles = [
+        {
+            "name": "idle-culler",
+            "scopes": ["list:users", "read:users:activity", "read:servers", "delete:servers"],
+            "services": ["idle-culler"],
+        }
+    ]
+
+# -------------------------------------------------
 # Cookie & Security Settings
 # -------------------------------------------------
 # JupyterHub reads these from tornado_settings; a top-level JupyterHub.cookie_options
@@ -101,4 +130,6 @@ c.JupyterHub.extra_handlers = [
     (r"/monitoring/browser", BrowserWebSocketHandler, {"worker_ip_for_group": worker_ip_for_group}),
     # Task 4: Monitoring — Dashboard page (all authenticated users)
     (r"/monitoring", MonitoringPageHandler),
+    # Per-user RAM/CPU limits (admins only; team limits live in group properties)
+    (r"/limits", LimitsPageHandler, {"store": _store}),
 ]

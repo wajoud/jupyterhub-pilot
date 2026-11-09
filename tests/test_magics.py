@@ -329,3 +329,44 @@ class TestReworkMagic:
         m.rework("")
         call_prompt = m.provider.generate.call_args[0][0]
         assert "clarity" in call_prompt.lower() or "refactor" in call_prompt.lower()
+
+
+class _FakeFrame:
+    """Looks like a pandas/polars DataFrame (pandas is not installed in the test env)."""
+
+    def __init__(self, ncols):
+        self.columns = [f"c{i}" for i in range(ncols)]
+        self.dtypes = ["int64"] * ncols
+        self.shape = (100, ncols)
+
+
+class TestDataAwareContext:
+    def test_dataframe_columns_and_dtypes_in_context(self):
+        shell = _make_shell(history=["df = load()"], ns={"df": _FakeFrame(2)})
+        assert "df: _FakeFrame 100×2: c0 (int64), c1 (int64)" in _get_context(shell)
+
+    def test_wide_frame_is_cut_at_30_columns(self):
+        shell = _make_shell(history=["df = load()"], ns={"df": _FakeFrame(40)})
+        ctx = _get_context(shell)
+        assert "c29 (int64), … 10 more" in ctx and "c30" not in ctx
+
+    def test_plain_values_unchanged(self):
+        shell = _make_shell(history=["x = 1"], ns={"x": 1, "s": "a"})
+        ctx = _get_context(shell)
+        assert "#   x: int" in ctx and "#   s: str" in ctx
+
+
+class TestExplain:
+    def test_explain_sends_context_and_question(self, capsys):
+        m = _make_magics(history=["df.describe()"], ns={"df": _FakeFrame(1)})
+        m.provider._backend.generate.return_value = "- mostly ints"
+        m.explain("why so many zeros?")
+        prompt = m.provider._backend.generate.call_args.args[0]
+        assert "why so many zeros?" in prompt and "df.describe()" in prompt and "c0 (int64)" in prompt
+        assert "- mostly ints" in capsys.readouterr().out
+
+    def test_explain_with_nothing_run(self, capsys):
+        m = _make_magics(history=[])
+        m.explain("")
+        assert "Nothing to explain" in capsys.readouterr().out
+        m.provider._backend.generate.assert_not_called()

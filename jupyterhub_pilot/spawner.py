@@ -58,6 +58,7 @@ except (ImportError, ModuleNotFoundError):
     _paramiko_ssh_exc = getattr(paramiko, "ssh_exception", paramiko)  # type: ignore
 from jupyterhub.spawner import Spawner
 
+from jupyterhub_pilot import limits as _limits
 from jupyterhub_pilot.admin import RBACManager
 from jupyterhub_pilot.paths import CONFIG_DIR, GET_PORT_CMD
 from jupyterhub_pilot.session_store import SessionStore
@@ -268,45 +269,35 @@ class CustomSpawner(Spawner):
 
         target_user = self._os_username()
 
-        # Open SSH connection as admin user
-        ssh = paramiko.SSHClient()
-        ssh.load_system_host_keys()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        try:
-            ssh.connect(
-                server_info["server_ip"],
-                username=admin_user,
-                key_filename=server_info["server_ssh_key"],
-                timeout=10,
-            )
-        except Exception as e:
-            self.log.warning(f"JIT Provisioner failed to connect as {admin_user}: {e}")
+        ssh = self._open_admin_ssh(server_info)
+        if ssh is None:
             return
 
         u = shlex.quote(target_user)
         home = shlex.quote(f"/home/{target_user}")
         admin_keys = shlex.quote(f"/home/{admin_user}/.ssh/authorized_keys")
+        team = self.user.groups[0].name if self.user.groups else ""
+        # A shared ssh_user team works in that account's home, not /home/<user>: no links.
+        folders = "" if server_info.get("ssh_user") else self._team_folder_script(target_user, team)
         script = f"""
-        if id {u} &>/dev/null; then
-            exit 0
+        if ! id {u} &>/dev/null; then
+            echo "Creating user {target_user}..."
+            # Amazon Linux's adduser is plain useradd and rejects the Debian flags.
+            sudo adduser --allow-bad-names --disabled-password --gecos "" {u} \\
+                || sudo useradd -m -s /bin/bash {u}
+            sudo loginctl enable-linger {u}
+
+            sudo -u {u} mkdir -p {home}/notebook
+            sudo -u {u} mkdir -p {home}/.ssh
+
+            sudo cp {admin_keys} {home}/.ssh/authorized_keys
+            sudo chown -R {u}:{u} {home}/.ssh
+            sudo chmod 600 {home}/.ssh/authorized_keys
         fi
-
-        echo "Creating user {target_user}..."
-        # Amazon Linux's adduser is plain useradd and rejects the Debian flags.
-        sudo adduser --allow-bad-names --disabled-password --gecos "" {u} \\
-            || sudo useradd -m -s /bin/bash {u}
-        sudo loginctl enable-linger {u}
-
-        sudo -u {u} mkdir -p {home}/notebook
-        sudo -u {u} mkdir -p {home}/.ssh
-
-        sudo cp {admin_keys} {home}/.ssh/authorized_keys
-        sudo chown -R {u}:{u} {home}/.ssh
-        sudo chmod 600 {home}/.ssh/authorized_keys
-
         # jupyterhub, notebook and the AI magics are installed once per worker
         # by install_worker.sh; installing them here took minutes and blew
         # through JupyterHub's 60 s start_timeout.
+        {folders}
         """
 
         try:
@@ -319,6 +310,58 @@ class CustomSpawner(Spawner):
                 self.log.info(f"JIT Provisioning succeeded for user {target_user}.")
         finally:
             ssh.close()
+
+    def _team_folder_script(self, os_user: str, team: str) -> str:
+        """Shell lines (run with sudo rights) for /data/<team> and /data/shared, linked into ~/notebook.
+
+        /data/<team>: read/write for the team's Linux group (one per team, created here).
+        /data/shared: read-only reference data; admins copy files there with sudo.
+        Runs on every start, so a user added to a team gets the folder on their next start.
+        """
+        if not _OS_USER_RE.fullmatch(team):  # team names become Linux group names
+            if team:
+                self.log.warning("CustomSpawner: team '%s' is not a valid Linux group name; no team folder", team)
+            team = ""
+        u = shlex.quote(os_user)
+        nb = f"/home/{os_user}/notebook"
+
+        def link(target: str, name: str) -> str:
+            # Leave a real file or folder the user already has under that name alone.
+            return f"[ -e {nb}/{name} ] && [ ! -L {nb}/{name} ] || sudo -u {u} ln -sfn {target} {nb}/{name}"
+
+        lines = [
+            "sudo mkdir -p /data/shared && sudo chmod 755 /data/shared",
+            link("/data/shared", "shared"),
+        ]
+        if team:
+            g = shlex.quote(team)
+            lines += [
+                f"sudo groupadd -f {g}",
+                f"id -nG {u} | grep -qw {g} || sudo usermod -aG {g} {u}",
+                f"sudo mkdir -p /data/{team} && sudo chgrp {g} /data/{team} && sudo chmod 2770 /data/{team}",
+                # New files stay group-writable whatever the user's umask (needs the acl tools).
+                f"sudo setfacl -d -m g::rwX /data/{team} 2>/dev/null || true",
+                link(f"/data/{team}", "team"),
+            ]
+        return "\n        ".join(lines)
+
+    def _open_admin_ssh(self, server_info: Dict[str, Any]) -> Optional[paramiko.SSHClient]:
+        """SSH to the worker as ``admin_ssh_user`` (has sudo); None if it fails (logged)."""
+        admin_user = server_info["admin_ssh_user"]
+        ssh = paramiko.SSHClient()
+        ssh.load_system_host_keys()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        try:
+            ssh.connect(
+                server_info["server_ip"],
+                username=admin_user,
+                key_filename=server_info["server_ssh_key"],
+                timeout=10,
+            )
+        except Exception as e:  # noqa: BLE001
+            self.log.warning(f"CustomSpawner: cannot SSH to {server_info['server_ip']} as {admin_user}: {e}")
+            return None
+        return ssh
 
     def _open_ssh(self, server_info: Dict[str, Any]) -> paramiko.SSHClient:
         """
@@ -379,26 +422,27 @@ class CustomSpawner(Spawner):
         """
         username: str = self.user.name
 
-        # ── Task 2: cache cgroup limits for use in start() ────────────────────
-        limits: Optional[Dict[str, Any]] = hub_settings.get("resource_limits")
-        if limits:
-            self._memory_max: Optional[str] = limits.get("memory_max")
-            self._cpu_quota: Optional[str] = limits.get("cpu_quota")
-            self.log.info(
-                "CustomSpawner: cgroups v2 limits for '%s': "
-                "MemoryMax=%s CPUQuota=%s",
-                username,
-                self._memory_max,
-                self._cpu_quota,
-            )
-        else:
-            self._memory_max = None
-            self._cpu_quota = None
-            self.log.debug(
-                "CustomSpawner: no resource_limits configured — "
-                "launching '%s' without cgroup wrapping.",
-                username,
-            )
+        # ── Task 2: cgroup limits for start(): user → team → hub_settings default ──
+        team_props = None
+        if self.user.groups:  # start() uses the first group as the team
+            props = getattr(self.user.groups[0], "properties", None)
+            team_props = props if isinstance(props, dict) else None
+        resolved = _limits.resolve(
+            _store.get_user_limits(username),
+            team_props,
+            hub_settings.get("resource_limits"),
+            lambda msg: self.log.warning("CustomSpawner: '%s': %s", username, msg),
+        )
+        self._memory_max: Optional[str] = resolved["memory_max"][0]
+        self._cpu_quota: Optional[str] = resolved["cpu_quota"][0]
+        self.log.info(
+            "CustomSpawner: limits for '%s': MemoryMax=%s (%s) CPUQuota=%s (%s)",
+            username,
+            self._memory_max,
+            resolved["memory_max"][1],
+            self._cpu_quota,
+            resolved["cpu_quota"][1],
+        )
 
         # ── Task 3: Vault secret injection ────────────────────────────────────
         if hub_settings.get("vault_enabled", False):
@@ -410,6 +454,8 @@ class CustomSpawner(Spawner):
             if secrets:
                 # Merge into self.environment; get_env() picks this up at launch
                 self.environment.update(secrets)
+                # Names only: lets %schedule give scheduled runs the same secrets.
+                self.environment["JUPYTERHUB_PILOT_SECRET_KEYS"] = ",".join(sorted(secrets))
                 self.log.info(
                     "CustomSpawner: Vault injected %d secret(s) for '%s'.",
                     len(secrets),
@@ -580,6 +626,8 @@ class CustomSpawner(Spawner):
                 f"--ServerApp.base_url={shlex.quote(self.server.base_url)} "
                 f"--notebook-dir='~/notebook/'"
             )
+            if hub_settings.get("terminals_enabled") is False:
+                singleuser_cmd += " --ServerApp.terminals_enabled=False"
 
             # Task 2: wrap with systemd-run if cgroup limits are configured
             mem = getattr(self, "_memory_max", None)
@@ -777,6 +825,68 @@ class CustomSpawner(Spawner):
         _store.set_session(username, status="stopped")
         self.log.info("CustomSpawner.poll: process stopped for '%s'", username)
         return 0
+
+    def _delete_linux_user(self) -> None:
+        """Blocking part of ``delete_forever()``; runs in a worker thread."""
+        mode = hub_settings.get("on_user_delete", "archive")
+        if mode == "keep":
+            return
+        if mode not in ("archive", "delete"):
+            self.log.error("CustomSpawner: on_user_delete=%r is not archive/delete/keep; keeping the account", mode)
+            return
+        groups = [g.name for g in self.user.groups]
+        if not groups:
+            self.log.info("CustomSpawner: '%s' has no team; no worker account to delete", self.user.name)
+            return
+        server_info = self._get_server_info(groups[0])
+        if server_info.get("ssh_user") or not server_info.get("admin_ssh_user"):
+            # A shared ssh_user account belongs to the whole team: never delete it.
+            return
+        os_user = self._os_username()  # validated: safe in the shell script
+        u = shlex.quote(os_user)
+        if mode == "archive":
+            # Notebooks are kept in /home/.deleted (root only); sudo sh -c 'rm -rf /home/.deleted/<user>-*' frees the disk.
+            remove = (
+                f"sudo mkdir -p /home/.deleted && sudo chmod 700 /home/.deleted\n"
+                f"[ -d /home/{os_user} ] && sudo mv /home/{os_user} /home/.deleted/{os_user}-$(date +%Y%m%d-%H%M%S)\n"
+                f"sudo userdel {u}\n"
+            )
+        else:
+            remove = f"sudo userdel -r {u} 2>&1 | grep -v 'mail spool' || true\n"
+        script = (
+            f"id {u} >/dev/null 2>&1 || exit 0\n"
+            f"sudo loginctl disable-linger {u} || true\n"
+            f"sudo pkill -KILL -u {u} || true\n"
+            f"sleep 1\n"
+            f"{remove}"
+            f"! id {u} >/dev/null 2>&1\n"
+        )
+        ssh = self._open_admin_ssh(server_info)
+        if ssh is None:  # worker down: log, don't block deleting the Hub user
+            self.log.warning(
+                "CustomSpawner: Linux user '%s' on %s NOT deleted (worker unreachable); remove it by hand",
+                os_user, server_info["server_ip"],
+            )
+            return
+        try:
+            _, stdout, stderr = ssh.exec_command(script)
+            if stdout.channel.recv_exit_status() != 0:
+                self.log.error(
+                    "CustomSpawner: deleting Linux user '%s' on %s failed: %s",
+                    os_user, server_info["server_ip"], stderr.read().decode(),
+                )
+            else:
+                self.log.info("CustomSpawner: Linux user '%s' on %s deleted (%s)", os_user, server_info["server_ip"], mode)
+        finally:
+            ssh.close()
+
+    async def delete_forever(self) -> None:
+        """Hub user deleted: remove their Linux account on the team's worker (``on_user_delete``)."""
+        try:
+            _store.delete_user_limits(self.user.name)
+            await asyncio.to_thread(self._delete_linux_user)
+        except Exception as exc:  # noqa: BLE001
+            self.log.error("CustomSpawner: could not delete Linux user for '%s': %s", self.user.name, exc)
 
     def clear_state(self) -> None:
         """

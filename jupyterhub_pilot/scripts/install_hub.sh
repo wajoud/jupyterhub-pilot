@@ -74,6 +74,11 @@ cat > "$CONF/hub_settings.json" << EOF
     "memory_max": "1G",
     "cpu_quota": "50%"
   },
+  "on_user_delete": "archive",
+  "idle_cull": {
+    "timeout": 10800,
+    "every": 300
+  },
   "vault_enabled": false,
   "vault_secret_path": "secret/jupyterhub-pilot"
 }
@@ -120,6 +125,8 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
+# `jupyterhub-pilot upgrade` runs only the steps newer than this.
+"$PYTHON" -c "import jupyterhub_pilot as p; print(p.__version__)" > /etc/jupyterhub-pilot/version
 
 echo ""
 echo "✅ Hub set up."

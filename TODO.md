@@ -81,79 +81,89 @@ ap-south-1, Ubuntu 26.04 Arm, `t4g.small` everywhere, JupyterHub 6.2.0, Notebook
 
 Today deleting a user in the Hub (Admin page, API, or `load-test --cleanup`) leaves their Linux account and `/home/<user>` on the team's worker.
 
-- [ ] When a Hub user is deleted, SSH to their team's worker as `admin_ssh_user` and remove the Linux account (`userdel -r`), stopping any leftover processes first.
-- [ ] This deletes their notebooks: decide whether to keep a copy of `/home/<user>/notebook` first or make removal opt-in.
-- [ ] Skip teams that use a shared `ssh_user` (never delete that account), and log, not fail, if the worker is unreachable.
-- [ ] Tests, and update README (Remove a worker server, Test a cluster cleanup note) and the `load_test.py` docstring.
+- [x] `CustomSpawner.delete_forever()` (JupyterHub calls it on user delete): SSH as `admin_ssh_user`, kill leftover processes, disable linger, remove the account.
+- [x] `on_user_delete` setting: `archive` (default: home moved to `/home/.deleted/<user>-<date>`), `delete`, `keep`.
+- [x] Shared `ssh_user` teams skipped; unreachable worker logs `NOT deleted`, the Hub user is still removed.
+- [x] Tests; README (Delete a user, Remove a worker server, Test a cluster cleanup), `load_test.py` docstring.
+- [ ] Check on a cluster: `load-test --cleanup` removes `lt-*` accounts and archives their homes.
 
 ## Change RAM/CPU limits from the Admin panel
 
 Today `resource_limits` in `hub_settings.json` is one limit for every user, and changing it needs a Hub restart.
 
-- [ ] Let an admin set `memory_max` / `cpu_quota` from the Admin panel, per team and per user. JupyterHub's Admin → Groups page already edits group **properties**, so a team limit can be read from the group's properties at spawn time; per-user needs a small admin form (users have no properties editor).
-- [ ] Order: user override → team (group properties) → `hub_settings.json` default. New limits apply on the user's next server start, no Hub restart.
-- [ ] Validate values (`512M`, `1G`, `100%`) and refuse bad ones with a clear message instead of a failed spawn.
-- [ ] Show the limit that applied on `/hub/monitoring`; tests; update README (Change the per-user RAM and CPU limit).
+- [x] Team limits from group properties (`memory_max`, `cpu_quota` in Admin → Groups); per-user limits on a new admin-only **Limits** page (`/hub/limits`, stored in SQLite).
+- [x] Order per value: user → team → `hub_settings.json` default; read at every spawn, no Hub restart.
+- [x] Values validated (`512M`/`1G`/`2T`, `50%`/`200%`); the page refuses bad ones, a bad group property is skipped with a log warning.
+- [x] The Hub log says which limit applied and from where; `/hub/monitoring` already shows the real cgroup limit. Tests; README.
+- [ ] Check on a cluster: set a team property and a user override, restart the user's server, `/hub/monitoring` shows the new limit.
 
 ## Make Vault clear: how it works and how to use it
 
 `install-hub` only installs the `vault` binary (on Ubuntu 26.04 from HashiCorp's 24.04 repo). It does not start a Vault server, create a token or a policy, or say how a user reads their secrets. `docs/SECURITY.md` §4 assumes a Vault server already exists.
 
-- [ ] Docs: one end-to-end walkthrough: start Vault (dev mode for testing, a real server for production), enable KV v2 at `secret/`, create a read-only policy + token for the Hub, put `VAULT_ADDR`/`VAULT_TOKEN` in `hub.env`, set `vault_enabled: true`, restart.
-- [ ] Docs: how to add a user's secrets (`vault kv put secret/jupyterhub-pilot/<user> KEY=value`), and how the user reads them in a notebook (`os.environ["KEY"]`, after their next server start).
-- [ ] Docs: how to check it works (Hub log line when secrets load or Vault is unreachable) and who can see what.
-- [ ] Check on the Hub whether `vault` actually got installed on 26.04 (`vault version`); if the install printed "Vault not installed", say so in the docs.
-- [ ] Add a Vault step to README → Test a cluster.
+- [x] Docs (`docs/SECURITY.md` §4): what `install-hub` does and doesn't do, dev-mode and production server, read-only policy + periodic token (+ weekly renew cron), `hub.env` + `vault_enabled`, adding and reading secrets, log lines, who can see what.
+- [x] README → Test a cluster step 6 (Vault).
+- [ ] Check on the Hub whether `vault` got installed on Ubuntu 26.04 (`vault version`); if `install-hub` printed "Vault not installed", say so in the docs.
+- [ ] Run step 6 on a cluster.
+- [ ] Later: have the Hub renew its own token (`/v1/auth/token/renew-self`) so the cron job is not needed.
 
 ## Upgrades: update only what changed, keep everything working
 
 Today an upgrade is `pip install -U` + a restart (README → Upgrading). That only updates the Python code. When a release also changes the systemd unit, `hub.env`, `hub_settings.json` keys or the SQLite tables, the admin has to fix it by hand (0.4.0's metrics URL change needed a `sed` on every worker) or run `install-hub` / `install-worker` again.
 
-- [ ] `sudo jupyterhub-pilot upgrade` on the Hub and on each worker: upgrade the package, apply only what changed, restart only the services that need it. Never re-run the full install, never touch keys, tokens, passwords, teams or users' files.
-- [ ] Keep a version in `/opt/jupyterhub-pilot` so `upgrade` knows which steps to run (e.g. 0.5 → 0.6: add a new setting with its default, rewrite the unit, add a DB column). Each step safe to run twice.
-- [ ] Add new `hub_settings.json` keys with defaults; keep the admin's existing values.
-- [ ] Hub and workers on the same version: `upgrade` checks the workers (over SSH) and warns if one is behind; Hub restart warning, since it stops users' servers.
-- [ ] Release notes say for each release: Hub only, workers only, or both; and whether a restart is needed.
-- [ ] Test: install the previous release, run the Test a cluster steps, `upgrade`, run them again; settings, teams and users' files unchanged.
+- [x] `sudo jupyterhub-pilot upgrade` (Hub and workers): pip upgrade, then the new code runs only the steps newer than `/etc/jupyterhub-pilot/version`; each step idempotent. Never touches keys, tokens, passwords, teams or homes.
+- [x] Steps so far: 0.4.0 worker metrics URL fix; 0.6.0 Hub `on_user_delete` + `idle_cull` defaults (existing values kept); 0.6.0 worker `acl` + `git` packages. `install-hub` / `install-worker` write the version file.
+- [x] Hub checks workers' versions over SSH and lists those behind; asks before restarting the Hub (`--yes` to skip).
+- [x] `CHANGELOG.md`: per release, Hub / workers / both and whether a restart is needed.
+- [ ] Test on a cluster: install 0.5.1 from PyPI, Test a cluster steps, `upgrade` on Hub + workers, steps again; settings, teams and homes unchanged.
+- [ ] Later steps that need it: rewrite the systemd units (when a release changes them) and SQLite migrations, added to `STEPS` in `upgrade.py`.
 
 ## Scheduled notebooks (cron tasks), e.g. with Airflow
 
 Users want to pick an `.ipynb` and have it run on a schedule (every night, every hour), without keeping a browser or kernel open.
 
-- [ ] Decide the engine. Airflow is the full option (DAGs, retries, history UI) but is heavy: its own DB, scheduler and web server. Lighter options to compare first: `papermill` run by a systemd timer on the team's worker, or the `jupyter-scheduler` extension (check it works in Notebook 7).
-- [ ] The run must happen **on the user's team worker, as that user**, under their RAM/CPU limit and with their Vault secrets, never on the Hub and never as root. With Airflow: one Airflow on the Hub (or its own VM) that SSHes to the worker and runs `papermill` as the user (same path as the spawner).
-- [ ] How a user schedules: a `%schedule "0 2 * * *"` magic in the notebook, or a Schedule button; list / pause / delete their own jobs. Admins see all jobs.
-- [ ] Output: save the run's executed notebook next to the original (`<name>-<date>.ipynb`) and keep N runs; failed runs visible to the user (and on `/hub/monitoring`).
-- [ ] Jobs survive Hub/worker restarts; a run whose worker is down is retried or marked failed, not lost silently. Delete the user → delete their jobs.
-- [ ] Docs (README section + Airflow setup if chosen) and a step in Test a cluster.
+- [x] Engine: `papermill` + systemd **user** timers on the team's worker (no Airflow: no extra DB/scheduler/web server, and the run is already on the right machine as the right user). `jupyterhub_pilot/schedule.py`.
+- [x] Runs on the user's worker as the user, under the limit of the server that scheduled it (`MemoryMax`/`CPUQuota` from the kernel's cgroup), with its Vault secrets (`600` env file; the spawner now passes `JUPYTERHUB_PILOT_SECRET_KEYS` names).
+- [x] `%schedule add <when> <nb> [--keep N]`, `list`, `run`, `pause`, `resume`, `delete`; admins list all jobs on a worker (README command).
+- [x] Output `<name>-<YYYYmmdd-HHMM>.ipynb` (or `-FAILED`) next to the original, last N kept; `list` shows the last result.
+- [x] Survives restarts (linger, `Persistent=true` catches up missed runs). Delete the user → account and timers gone.
+- [x] Docs: README → Scheduled notebooks; `docs/SECURITY.md` (env file). Tests (units mocked).
+- [ ] Check on a cluster: `%schedule add "*:0/2" test.ipynb` (every 2 minutes), result appears, `-FAILED` on a raising cell, a 2 GB cell is killed under a `1G` limit, job runs again after a worker reboot, `systemd-analyze` exists on Ubuntu 26.04 and AL2023.
+- [ ] Later: failed runs on `/hub/monitoring`; a Schedule button in the Notebook UI.
 
 ## Terminal access and JupyterLab
 
 Notebook 7 is built on JupyterLab and pulls in `jupyterlab` and the terminal extension, so both are probably available already but untested and undocumented: **New → Terminal** in the file browser, and `https://<hub>/user/<name>/lab`. The Hub opens `/tree` (`c.Spawner.default_url`).
 
-- [ ] Check on a cluster: terminal opens, runs as the user's own Linux account on the team worker, no `sudo`, and stays under their RAM/CPU limit (a `stress` in the terminal is capped like a kernel). `/lab` loads with the AI magics working.
-- [ ] Decide the default: Notebook (`/tree`) or JupyterLab (`/lab`), and whether users can switch (Notebook's "Open in JupyterLab" menu).
-- [ ] Admin switch to turn terminals off (whole Hub, later per team): `ServerApp.terminals_enabled=False` in the spawn command.
-- [ ] Note for security docs: a terminal gives the same rights as code in a kernel (it already can run `os.system`), so it is not a new hole, but it does make long-running processes easy; they keep running after the browser closes and count against the user's limit.
-- [ ] README: how to open a terminal, how to use JupyterLab, how to turn terminals off.
+- [x] Decided: keep Notebook (`/tree`) as the default; JupyterLab at `/user/<name>/lab` and via **View → Open JupyterLab**.
+- [x] `terminals_enabled: false` in `hub_settings.json` adds `--ServerApp.terminals_enabled=False` to the spawn command (whole Hub). Test.
+- [x] Docs: README → Terminal and JupyterLab; `docs/SECURITY.md` §1 terminal note.
+- [ ] Check on a cluster: terminal opens as the user on the team worker, no `sudo`, a `stress` there is capped like a kernel; `/lab` loads with the AI magics; `terminals_enabled: false` removes the menu.
+- [ ] Later: turn terminals off per team (group property, like the limits).
 
 ## Ideas for a better analysis / data science setup
 
 Ranked by value for effort. Each needs a decision before it becomes real work.
 
 ### First (small effort)
-- [ ] **Idle culling:** stop servers idle for N minutes (JupyterHub's `jupyterhub-idle-culler` as a Hub service). Frees RAM on small workers (2 GiB, 1G per user).
-- [ ] **Shared team folder:** `/data/<team>` writable by the team (a Linux group per team, users added at spawn) and a read-only `/data/shared` for reference datasets; set up by `install-worker`.
-- [ ] **Same data stack on every worker:** pinned pandas, polars, DuckDB, scikit-learn, matplotlib/plotly, `jupysql`, so a notebook runs the same on any team's worker.
+- [x] **Idle culling:** `jupyterhub-idle-culler` as a Hub service, `idle_cull` in `hub_settings.json` (default 3 h, on for new installs, off for old ones until the key is added). Branch `feature/todo-0.6.0`.
+  - [ ] Check on a cluster: README → Test a cluster step 5 (server stopped after a 120 s timeout).
+  - [ ] Check whether a kernel that runs a long silent cell (no output) keeps the server alive; if not, keep the "print progress" advice in README or raise the default.
+- [x] **Shared team folder:** `/data/<team>` (Linux group per team, setgid + default ACL) and read-only `/data/shared`, created and linked into `~/notebook` at every server start (JIT step), so no worker re-install. `install-worker` adds the `acl` package.
+  - [ ] Check on a cluster: two users of one team both write `team/`; a user of another team on the same worker can't; `shared/` is read-only.
+- [x] **Same data stack on every worker:** pandas, polars, DuckDB (+ `duckdb-engine`), scikit-learn, matplotlib, plotly, `jupysql` in the `worker` extra (minimum versions, not exact pins; `upgrade` keeps workers together).
+  - [ ] Check worker disk after install (~600 MB more) and that `%sql duckdb://` works.
 
 ### Next (protect work, reach data)
 - [ ] **Notebook backups:** home folders live only on the worker disk; nightly sync to S3 or EBS snapshots, or EFS homes (also makes moving a team to a new worker free).
 - [ ] **Data connections from Vault:** turn a user's Vault secrets into ready `%sql` / S3 connections, no passwords in notebooks (after the Vault section above).
-- [ ] **Git in the notebook:** `jupyterlab-git` + `nbdime` for readable notebook diffs.
+- [x] **Git in the notebook:** `jupyterlab-git` + `nbdime` in the worker extra, `git` in `install-worker`; README → Git.
+  - [ ] Check on a cluster: the Git tab in `/lab` (and whether Notebook 7's `/tree` shows a Git menu); `nbdiff` works.
 
 ### Later (bigger)
 - [ ] **Worker sizes per team:** bigger or GPU workers for some teams; stop idle workers to save cost.
 - [ ] **Share results:** publish a notebook as read-only HTML or a Voilà dashboard.
-- [ ] **Data-aware AI magics:** give `%do` / `%fix` the columns and dtypes of DataFrames in memory; add `%explain` for results.
+- [x] **Data-aware AI magics:** the context lists pandas/polars DataFrames with shape and column dtypes (first 30); new `%explain [question]`. Docs + tests.
+  - [ ] Check with a real model on a cluster that `%do` uses the real column names.
 - [ ] **Real-time collaboration:** `jupyter-collaboration` (needs JupyterLab, see the Terminal/JupyterLab section).
 - [ ] **Usage report per team:** monthly CPU/RAM per team from the monitoring data.

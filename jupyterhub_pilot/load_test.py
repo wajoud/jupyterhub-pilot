@@ -8,8 +8,9 @@ Load test for a JupyterHub-Pilot cluster. Run it on the Hub.
      one CPU busy for --cpu-seconds, and records whether it finished, failed or
      was killed (a kernel over the user's memory limit dies).
   4. Prints spawn times, failures and kernel results per team.
-  --cleanup stops and deletes the test users instead (their Linux accounts and
-  home folders stay on the workers).
+  --cleanup stops and deletes the test users instead. The Hub then deletes their
+  Linux accounts on the workers (homes archived in /home/.deleted, see
+  on_user_delete in README).
 
 Needs an admin API token (Hub → Token page while logged in as an admin):
 

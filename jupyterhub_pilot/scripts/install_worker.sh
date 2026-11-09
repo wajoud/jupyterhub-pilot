@@ -16,9 +16,9 @@ fi
 echo "1. OS packages"
 if command -v apt-get >/dev/null; then
     apt-get update -y
-    apt-get install -y net-tools psmisc
+    apt-get install -y net-tools psmisc acl git
 elif command -v dnf >/dev/null; then
-    dnf install -y net-tools psmisc
+    dnf install -y net-tools psmisc acl git
 else
     echo "❌ Needs apt (Ubuntu) or dnf (Amazon Linux 2023)."
     exit 1
@@ -76,6 +76,8 @@ EOF
 systemctl daemon-reload
 systemctl enable jupyterhub_pilot-metrics
 systemctl restart jupyterhub_pilot-metrics
+# `jupyterhub-pilot upgrade` runs only the steps newer than this.
+"$PYTHON" -c "import jupyterhub_pilot as p; print(p.__version__)" > /etc/jupyterhub-pilot/version
 
 echo ""
 echo "✅ Worker set up. Agent logs: sudo journalctl -u jupyterhub_pilot-metrics -f"

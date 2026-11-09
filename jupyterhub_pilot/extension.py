@@ -21,14 +21,14 @@ import ast
 import difflib
 import sys
 import traceback
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from IPython.core.magic import Magics, line_magic, magics_class
 from IPython.core.magic_arguments import argument, magic_arguments, parse_argstring
 
 from .provider import LLMProvider
 
-_MAGIC_PREFIXES = ("%do", "%fix", "%review", "%rework")
+_MAGIC_PREFIXES = ("%do", "%fix", "%review", "%rework", "%explain")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Context builder
@@ -51,6 +51,20 @@ def _user_cells(shell) -> List[Tuple[int, str]]:
         for i, h in enumerate(shell.history_manager.input_hist_raw)
         if h.strip() and not h.strip().startswith(_MAGIC_PREFIXES)
     ]
+
+
+def _describe(value: Any) -> str:
+    """Type name; for a pandas/polars DataFrame also its shape and column dtypes."""
+    name = type(value).__name__
+    columns, dtypes, shape = (getattr(value, a, None) for a in ("columns", "dtypes", "shape"))
+    if columns is None or dtypes is None or not isinstance(shape, tuple):
+        return name
+    try:
+        cols = [f"{c} ({d})" for c, d in zip(list(columns)[:30], list(dtypes)[:30])]
+    except Exception:  # noqa: BLE001  (some object that only looks like a DataFrame)
+        return name
+    more = f", … {len(columns) - 30} more" if len(columns) > 30 else ""
+    return f"{name} {shape[0]}×{shape[1]}: " + ", ".join(cols) + more
 
 
 def _get_context(shell, n: int = 3) -> str:
@@ -83,7 +97,7 @@ def _get_context(shell, n: int = 3) -> str:
             break
         if k.startswith("_") or callable(v):
             continue
-        ns_lines.append(f"#   {k}: {type(v).__name__}")
+        ns_lines.append(f"#   {k}: {_describe(v)}")
     ns_lines.reverse()
     if ns_lines:
         sections.append("# Namespace:\n" + "\n".join(ns_lines))
@@ -299,6 +313,26 @@ class JupyterHubPilotMagics(Magics):
         print(raw_review)
         print("=" * 60)
 
+    # ── %explain ──────────────────────────────────────────────────────────────
+
+    @line_magic
+    def explain(self, line):
+        """%explain [question] — Explain the last cell's result in plain words."""
+        cells = _user_cells(self.shell)
+        if not cells:
+            print("ℹ️  Nothing to explain yet. Run a cell first.")
+            return
+        question = line.strip() or "What does this result show, and is anything surprising or wrong in it?"
+        print("# 💡 JupyterHub-Pilot — explaining …")
+        prompt = (
+            "You are a data analyst helping a colleague. Using the notebook context below "
+            "(code, its output, and the variables in memory with their columns), answer the "
+            "question in plain words, in at most 6 short bullet points. Do not write code "
+            "unless asked.\n\n"
+            f"Question: {question}\n\n{_get_context(self.shell)}"
+        )
+        print(self.provider._backend.generate(prompt))
+
     # ── %rework ───────────────────────────────────────────────────────────────
 
     @magic_arguments()
@@ -359,6 +393,6 @@ def load_ipython_extension(ipython) -> None:
     """Register JupyterHub-Pilot magics with the running IPython kernel."""
     ipython.register_magics(JupyterHubPilotMagics(ipython))
     print(
-        "✅ JupyterHub-Pilot loaded. Available: %do, %fix, %review, %rework\n"
+        "✅ JupyterHub-Pilot loaded. Available: %do, %fix, %review, %rework, %explain\n"
         "   Run %do? for help on any command."
     )

@@ -146,7 +146,15 @@ sudo jupyterhub-pilot add-worker team_alpha <WORKER_PRIVATE_IP>
 
 ### Upgrading
 
-`sudo pip3 install --break-system-packages --ignore-installed -U "jupyterhub-pilot[hub]"` on the Hub (`[worker,ai]` on workers), then `sudo systemctl restart jupyterhub` (or `jupyterhub_pilot-metrics`). Your settings in `/opt/jupyterhub-pilot` are kept.
+On the Hub and on every worker:
+
+```bash
+sudo jupyterhub-pilot upgrade
+```
+
+It upgrades the package with pip, then applies only the changes the new release needs (for example, adds new `hub_settings.json` keys with their defaults, keeping your values), and restarts the metrics agent on a worker. On the Hub it lists any worker still on an older version and asks before restarting the Hub, because that stops every user's running server (`--yes` skips the question). Keys, tokens, passwords, teams and users' files are never touched. [CHANGELOG.md](https://github.com/wajoud/jupyterhub-pilot/blob/main/CHANGELOG.md) says for each release whether the Hub, the workers or both need it.
+
+The installed version is recorded in `/etc/jupyterhub-pilot/version`. Installs from before 0.6.0 have no such file, so the first `upgrade` runs every step; each one is safe to run twice. If you installed the new package by hand already, `sudo jupyterhub-pilot upgrade --no-pip` still applies the steps.
 
 Installs made with `git clone` (0.4.0 and earlier) keep working after a `git pull`. To move one to the pip layout, install the package as above and run `sudo jupyterhub-pilot install-hub` (or `install-worker`) again: it keeps the keys and team mapping in `/opt/jupyterhub-pilot` and rewrites the service.
 
@@ -252,13 +260,31 @@ curl -X DELETE -H "Authorization: token <ADMIN_API_TOKEN>" \
   https://hub.example.com/hub/api/users/alice/server
 ```
 
+### Idle servers are stopped after 3 hours
+
+The Hub runs [`jupyterhub-idle-culler`](https://github.com/jupyterhub/jupyterhub-idle-culler), which stops a notebook server after 3 hours with no activity, so forgotten servers don't hold RAM on the worker. Activity means the browser talking to the server, or a kernel sending output. The user's files stay; only what is in memory (variables, loaded DataFrames) is lost: start the server again and re-run the notebook.
+
+A job that runs longer than the timeout **without printing anything** can be stopped mid-run. Print progress now and then, or raise the timeout.
+
+Change the timeout (seconds) or turn it off, on the Hub, then restart:
+
+```bash
+F=/opt/jupyterhub-pilot/hub_settings.json
+sudo jq '.idle_cull = {"timeout": 10800, "every": 300}' $F | sudo tee $F.tmp >/dev/null && sudo mv $F.tmp $F
+# off: sudo jq '.idle_cull = null' ...
+sudo systemctl restart jupyterhub
+```
+
+Installs from before 0.6.0 have no `idle_cull` key: culling stays off until you add it, or until `sudo jupyterhub-pilot upgrade` adds the 3-hour default (set it to `null` afterwards to keep it off).
+
 ### When do I need a restart?
 
 | You changed | Restart needed? |
 |---|---|
-| `hub_settings.json` (IPs, admins, domain, limits, Vault) | Yes: restart the Hub |
+| `hub_settings.json` (IPs, admins, domain, limits, idle timeout, Vault) | Yes: restart the Hub |
 | `user_mapping.json` + re-seeded the DB (add/change a worker) | No |
 | Groups or group members in the Admin panel | No (the user restarts their own server to move workers) |
+| A user's or team's limit (Limits page, group properties) | No (applies on the user's next server start) |
 | The agent token | Yes: Hub and every worker's metrics agent |
 
 ## Add users and teams
@@ -274,6 +300,20 @@ Rules:
 - A user with **no group** cannot start a server ("User has no groups assigned").
 - Keep each user in **one** team group. If a user is in several, the first group is used.
 - **Make someone an admin:** add their username to `admin_users` in `hub_settings.json` and restart the Hub, or tick **Admin** on their user in the Admin panel.
+
+### Delete a user
+
+**Admin** → the user → **Delete User** (stop their server first). The Hub then SSHes to their team's worker as `admin_ssh_user` and removes their Linux account. What happens to their files is set by `on_user_delete` in `hub_settings.json`:
+
+| `on_user_delete` | Linux account | `/home/<user>` (notebooks) |
+|---|---|---|
+| `"archive"` (default) | deleted | moved to `/home/.deleted/<user>-<date>` (root only) |
+| `"delete"` | deleted | deleted |
+| `"keep"` | kept | kept |
+
+- Teams with a shared `ssh_user` are skipped: that account belongs to the whole team.
+- If the worker is down, the Hub user is still deleted and the Hub log says `Linux user '<user>' ... NOT deleted`; run `sudo pkill -u <user>; sudo userdel -r <user>` on the worker later.
+- Archived homes use disk until you remove them: `sudo sh -c 'rm -rf /home/.deleted/<user>-*'` on the worker.
 
 ## Add more worker servers
 
@@ -347,7 +387,7 @@ To move a team to another VM: set up the new worker (step 2) and run `add-worker
    ```
 
 3. Delete the group in **Admin** → **Groups**, or move its users to another team.
-4. Copy any notebooks you want to keep from the worker's `/home/<user>/notebook`, then shut the VM down.
+4. Copy any notebooks you want to keep from the worker's `/home/<user>/notebook` (and `/home/.deleted/` for users deleted earlier), then shut the VM down.
 
 ## Using the notebooks and AI magics
 
@@ -365,8 +405,86 @@ Load the magics in a notebook:
 | `%fix` | Reads the last error and proposes fixed code |
 | `%review` | Reviews recent cells for bugs and style |
 | `%rework <instruction>` | Rewrites the last cell as instructed |
+| `%explain [question]` | Explains the last result in plain words |
+
+The magics see the column names and dtypes of DataFrames in memory, so `%do plot amount by region` uses your real columns.
 
 The LLM backend is set in `~/.jupyterhub-pilot/config.json` (per user) or `/etc/jupyterhub-pilot/config.json` (whole worker). The default is a local Ollama at `http://localhost:11434`. Setup, auto-loading for all users and cloud/MCP backends: [AI Magic Commands](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/AI_MAGICS.md).
+
+### Terminal and JupyterLab
+
+Notebook 7 is built on JupyterLab, so both come with the worker install:
+
+- **Terminal:** in the file browser, **New** → **Terminal**. It is a shell on the team's worker as the user's own Linux account: no `sudo`, same files as the notebooks, and the same RAM/CPU limit (it runs inside the server's cgroup).
+- **JupyterLab:** open `https://hub.example.com/user/<name>/lab`, or **View** → **Open JupyterLab** in a notebook. The AI magics work there too. The Hub opens the classic Notebook view (`/tree`) by default.
+
+Programs started in a terminal keep running after the browser is closed and count against the user's limit until they end, the user's server stops, or the idle culler stops the server.
+
+**Turn terminals off** (whole Hub): set `terminals_enabled` to `false` in `hub_settings.json` and restart the Hub; each server started after that has no **Terminal** menu.
+
+```bash
+F=/opt/jupyterhub-pilot/hub_settings.json
+sudo jq '.terminals_enabled = false' $F | sudo tee $F.tmp >/dev/null && sudo mv $F.tmp $F
+sudo systemctl restart jupyterhub
+```
+
+This does not stop users running shell commands: a kernel can do the same with `!ls` or `os.system`. It only removes the interactive shell.
+
+### Team folder and shared data
+
+Every user's file browser has two links, set up on each worker at server start:
+
+| Folder | Path on the worker | Who can write |
+|---|---|---|
+| `team` | `/data/<team>` | Everyone in the team (a Linux group with the team's name; new files stay team-writable) |
+| `shared` | `/data/shared` | Admins only (read-only for users): put reference datasets here |
+
+```bash
+# On a worker, as the admin user: publish a dataset to every user of that worker
+sudo cp sales_2026.parquet /data/shared/
+```
+
+A user added to a team gets the `team` link on their next server start. If they already had their own file or folder named `team` or `shared` in `~/notebook`, it is left alone and no link is made. Teams with a shared `ssh_user` don't get the links. `/data` lives on the worker's disk, so it is not shared between workers and not backed up.
+
+### Scheduled notebooks
+
+Run a notebook on a timer, with no browser or server open. It runs on the team's worker as the user, under their RAM/CPU limit and with their Vault secrets:
+
+```python
+%load_ext jupyterhub_pilot.schedule
+%schedule add daily report.ipynb                 # every day at 00:00 (worker's clock, usually UTC)
+%schedule add "Mon..Fri 07:30" report.ipynb --keep 10
+%schedule list                                    # name, when, next run, last result
+%schedule run report                              # run now
+%schedule pause report      /  %schedule resume report
+%schedule delete report                           # past results are kept
+```
+
+- **When:** systemd calendar times: `hourly`, `daily`, `weekly`, `"Mon..Fri 08:00"`, `"*-*-* 02:30"`, `"*-*-01 06:00"` (monthly). `man systemd.time` has the full syntax; a bad one is refused with examples.
+- **Results:** each run saves the executed notebook next to the original as `report-20261109-0730.ipynb`, or `report-20261109-0730-FAILED.ipynb` if a cell raised (open it to see the error). The last 5 (`--keep N`) are kept.
+- **Restarts:** jobs live in the user's systemd timers on the worker (`~/.config/systemd/user/jhp-*`), so they survive Hub and worker restarts. A run missed while the worker was off runs when it comes back.
+- The limit and secrets are copied when you run `%schedule add`. After your limit or secrets change, run the same `add` again to update the job.
+- Deleting the user removes their jobs with their Linux account.
+
+Admins, on a worker: every job is `sudo sh -c 'ls /home/*/.config/systemd/user/jhp-*.timer'`, and a user's run log is `sudo journalctl _UID=$(id -u <user>) --user-unit 'jhp-*'` (or `systemctl --user` as that user).
+
+### Git
+
+Workers have `git`, the JupyterLab Git panel (`jupyterlab-git`) and `nbdime` for notebook diffs. In JupyterLab (`/user/<name>/lab`), the **Git** tab on the left clones, commits, pushes and shows notebook diffs cell by cell. In a terminal, `nbdiff old.ipynb new.ipynb` shows the same, and `nbdime config-git --enable --global` makes `git diff` use it.
+
+To push to GitHub, each user adds their own key from a terminal (`ssh-keygen -t ed25519`, then add `~/.ssh/id_ed25519.pub` to their GitHub account) or uses an HTTPS token. Keys stay in the user's home on the team's worker.
+
+### Data packages
+
+Every worker has the same data stack (part of the `worker` install): pandas, polars, DuckDB, scikit-learn, matplotlib, plotly and `jupysql`, so a notebook runs the same on any team's worker. SQL over files with DuckDB:
+
+```python
+%load_ext sql
+%sql duckdb://
+%sql SELECT region, sum(amount) FROM 'shared/sales_2026.parquet' GROUP BY region
+```
+
+The packages are installed system-wide with minimum versions. Run `sudo jupyterhub-pilot upgrade` on all workers at the same time to keep them on the same versions. Users can add their own in a terminal or a `!` cell: `pip install --user --break-system-packages <package>` (Ubuntu refuses plain `pip install` on the system Python; `--user` keeps it in their home).
 
 ## Monitoring dashboard
 
@@ -394,11 +512,29 @@ Agent status, on a worker: `sudo systemctl status jupyterhub_pilot-metrics`. Mor
 | `mapping_file` | JSON fallback for team→VM mappings, used if SQLite is unreachable |
 | `db_path` | SQLite state DB |
 | `resource_limits` | `memory_max` (e.g. `"1G"`) and `cpu_quota` (e.g. `"50%"`) per notebook server; `null` turns limits off |
-| `vault_enabled`, `vault_secret_path` | Vault secret injection; see [Security](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/SECURITY.md) |
+| `terminals_enabled` | `false` removes the **Terminal** menu from every server started afterwards (default: on). See [Terminal and JupyterLab](#terminal-and-jupyterlab) |
+| `on_user_delete` | What deleting a Hub user does on the worker: `"archive"` (default), `"delete"` or `"keep"`. See [Delete a user](#delete-a-user) |
+| `idle_cull` | `timeout` (seconds without activity before a server is stopped, default `10800` = 3 h) and `every` (how often to check, seconds); `null` or missing turns it off. See [Idle servers](#idle-servers-are-stopped-after-3-hours) |
+| `vault_enabled`, `vault_secret_path` | Per-user secrets from Vault; set-up walkthrough in [Security → Vault](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/SECURITY.md#4-vault-secret-injection) |
 
 ### Change the per-user RAM and CPU limit
 
-Every user's notebook server gets the same limit (default `1G` RAM, `50%` of one core); a kernel over `memory_max` is killed, the worker and other users are not affected. The limit is per user, not per worker, so size it for how many users share a worker (5 users on a 2 GiB worker: about `300M`). To change it, on the Hub:
+A kernel over `memory_max` is killed; the worker and other users are not affected. The limit is per user, not per worker, so size it for how many users share a worker (5 users on a 2 GiB worker: about `300M`).
+
+Each value (`memory_max`, `cpu_quota`) comes from the first place that sets it:
+
+1. **One user:** **Limits** in the nav bar (admins only, `/hub/limits`): enter the user name and a value, **Save**. **Clear** goes back to the team or default limit.
+2. **A team:** **Admin** → **Groups** → the team → **Properties**: add `memory_max` = `2G` and/or `cpu_quota` = `100%`, then **Apply**.
+3. **Everyone else:** `resource_limits` in `hub_settings.json` (default `1G` RAM, `50%` of one core).
+
+Changes from 1 and 2 apply on the user's next server start, with no Hub restart. Values:
+
+- `memory_max`: `300M`, `512M`, `1G`, `2G`, ... (`M`, `G` or `T` required)
+- `cpu_quota`: `50%` = half a core, `100%` = one core, `200%` = two cores
+
+The Limits page refuses a bad value. A bad team property is skipped with a warning in the Hub log (`team limit ignored`) and the default is used. The Hub log says which limit a server got and where it came from: `limits for 'alice': MemoryMax=2G (team) CPUQuota=50% (default)`. `/hub/monitoring` shows each user's memory against the limit their server really has.
+
+To change the default for everyone, on the Hub:
 
 ```bash
 F=/opt/jupyterhub-pilot/hub_settings.json
@@ -407,11 +543,7 @@ sudo jq .resource_limits $F      # check
 sudo systemctl restart jupyterhub
 ```
 
-- `memory_max`: `300M`, `512M`, `1G`, `2G`, ...
-- `cpu_quota`: `50%` = half a core, `100%` = one core, `200%` = two cores
-- No limits: `sudo jq '.resource_limits = null' ...`
-
-The restart stops every running notebook server; new limits apply to servers started after it. Check a user's row on `/hub/monitoring`, which shows memory against the limit.
+No default limit: `sudo jq '.resource_limits = null' ...`. The restart stops every running notebook server; the new default applies to servers started after it.
 
 Environment variables:
 
@@ -512,7 +644,21 @@ Expect `1 killed`. Only the kernel dies; the user's notebook server keeps runnin
 4. Start the VM again (its private IP stays the same, no `add-worker` needed). The card comes back in about a minute and the user can start again.
 5. `jupyterhub-pilot load-test --hub $HUB --users 1 --cleanup`
 
-`--cleanup` removes `--users` users with that `--prefix` (default `lt`, 10 users), so pass the same numbers you tested with. When done, revoke the token on the Token page.
+**5. Idle servers are stopped**
+
+1. Set a short timeout: `sudo jq '.idle_cull = {"timeout": 120, "every": 30}' $F | sudo tee $F.tmp >/dev/null && sudo mv $F.tmp $F`, then `sudo systemctl restart jupyterhub`.
+2. `jupyterhub-pilot load-test --hub $HUB --teams team_alpha --users 1 --no-workload`, and don't open it in a browser.
+3. Within about 3 minutes `sudo journalctl -u jupyterhub | grep -i cull` shows the culler stopping `lt-001`, and Admin shows it stopped.
+4. Set the timeout back to `10800` / `300`, restart, and `jupyterhub-pilot load-test --hub $HUB --users 1 --cleanup`.
+
+**6. Vault secrets (optional)**
+
+1. Set up Vault as in [Security → Vault](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/SECURITY.md#4-vault-secret-injection) (dev mode is fine for a test).
+2. `vault kv put secret/jupyterhub-pilot/lt-001 TEST_SECRET=hello`, then `jupyterhub-pilot load-test --hub $HUB --teams team_alpha --users 1 --no-workload`.
+3. `sudo journalctl -u jupyterhub | grep "Vault injected 1 secret(s) for 'lt-001'"`. Admins can't open lt-001's notebook, so check on the worker: `sudo cat /proc/$(sudo cat /home/lt-001/.jupyterhub-pilot-lt-001.pid)/environ | tr '\0' '\n' | grep TEST_SECRET`.
+4. `jupyterhub-pilot load-test --hub $HUB --users 1 --cleanup`.
+
+`--cleanup` removes `--users` users with that `--prefix` (default `lt`, 10 users), so pass the same numbers you tested with. Their Linux accounts go too; homes are archived in `/home/.deleted/` on each worker (`sudo sh -c 'rm -rf /home/.deleted/lt-*'` to free the disk). When done, revoke the token on the Token page.
 
 Reference (2026-11-08, ap-south-1, Ubuntu 26.04 Arm, `t4g.small` Hub + 4 workers, 0.5.1, JupyterHub 6.2.0, limit `1G`/`50%`): step 1 8/8 ready, median 7.6 s; step 2 20/20 ready, median 8.8 s, max 13.3 s, 20 kernels finished; step 3 kernel killed, server kept running.
 

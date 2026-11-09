@@ -54,6 +54,7 @@ Repository = "https://github.com/wajoud/jupyterhub-pilot.git"
 hub = [
     "jupyterhub>=5.3,<7",  # 5.3+: shared-password test login; tested on 6.2
     "oauthenticator>=16.0",  # Google login
+    "jupyterhub-idle-culler>=1.4",  # stops idle servers (hub_settings "idle_cull")
     "paramiko>=3.4.0,<6.0",
     "websockets>=12.0",
 ]
@@ -63,6 +64,20 @@ worker = [
     "notebook>=7.0.0",
     "psutil>=6.0.0",
     "websockets>=12.0",
+    # Same data stack on every worker, so a notebook runs the same on any team's worker.
+    # shortcut: lower bounds, not exact pins; workers installed months apart can differ
+    # until `jupyterhub-pilot upgrade` runs on all of them. Pin exactly if that bites.
+    "pandas>=2.2",
+    "polars>=1.0",
+    "duckdb>=1.1",
+    "duckdb-engine>=0.13",  # lets jupysql's %sql talk to DuckDB
+    "jupysql>=0.10",
+    "scikit-learn>=1.5",
+    "matplotlib>=3.8",
+    "plotly>=5.20",
+    "papermill>=2.6",  # %schedule runs notebooks with it
+    "jupyterlab-git>=0.50",  # Git panel in JupyterLab (needs the git package, install-worker adds it)
+    "nbdime>=4.0",  # readable notebook diffs
 ]
 # Install AI features: pip install jupyterhub_pilot[ai]
 ai = [
