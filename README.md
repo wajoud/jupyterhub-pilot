@@ -313,7 +313,7 @@ Rules:
 
 - Teams with a shared `ssh_user` are skipped: that account belongs to the whole team.
 - If the worker is down, the Hub user is still deleted and the Hub log says `Linux user '<user>' ... NOT deleted`; run `sudo pkill -u <user>; sudo userdel -r <user>` on the worker later.
-- Archived homes use disk until you remove them: `sudo rm -rf /home/.deleted/<user>-*` on the worker.
+- Archived homes use disk until you remove them: `sudo sh -c 'rm -rf /home/.deleted/<user>-*'` on the worker.
 
 ## Add more worker servers
 
@@ -649,7 +649,7 @@ Expect `1 killed`. Only the kernel dies; the user's notebook server keeps runnin
 3. `sudo journalctl -u jupyterhub | grep "Vault injected 1 secret(s) for 'lt-001'"`. Admins can't open lt-001's notebook, so check on the worker: `sudo cat /proc/$(sudo cat /home/lt-001/.jupyterhub-pilot-lt-001.pid)/environ | tr '\0' '\n' | grep TEST_SECRET`.
 4. `jupyterhub-pilot load-test --hub $HUB --users 1 --cleanup`.
 
-`--cleanup` removes `--users` users with that `--prefix` (default `lt`, 10 users), so pass the same numbers you tested with. Their Linux accounts go too; homes are archived in `/home/.deleted/` on each worker (`sudo rm -rf /home/.deleted/lt-*` to free the disk). When done, revoke the token on the Token page.
+`--cleanup` removes `--users` users with that `--prefix` (default `lt`, 10 users), so pass the same numbers you tested with. Their Linux accounts go too; homes are archived in `/home/.deleted/` on each worker (`sudo sh -c 'rm -rf /home/.deleted/lt-*'` to free the disk). When done, revoke the token on the Token page.
 
 Reference (2026-11-08, ap-south-1, Ubuntu 26.04 Arm, `t4g.small` Hub + 4 workers, 0.5.1, JupyterHub 6.2.0, limit `1G`/`50%`): step 1 8/8 ready, median 7.6 s; step 2 20/20 ready, median 8.8 s, max 13.3 s, 20 kernels finished; step 3 kernel killed, server kept running.
 

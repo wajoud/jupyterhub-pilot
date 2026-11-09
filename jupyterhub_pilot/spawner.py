@@ -845,7 +845,7 @@ class CustomSpawner(Spawner):
         os_user = self._os_username()  # validated: safe in the shell script
         u = shlex.quote(os_user)
         if mode == "archive":
-            # Notebooks are kept in /home/.deleted; `sudo rm -rf /home/.deleted/<user>-*` frees the disk.
+            # Notebooks are kept in /home/.deleted (root only); sudo sh -c 'rm -rf /home/.deleted/<user>-*' frees the disk.
             remove = (
                 f"sudo mkdir -p /home/.deleted && sudo chmod 700 /home/.deleted\n"
                 f"[ -d /home/{os_user} ] && sudo mv /home/{os_user} /home/.deleted/{os_user}-$(date +%Y%m%d-%H%M%S)\n"
