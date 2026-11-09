@@ -76,6 +76,8 @@ worker = [
     "matplotlib>=3.8",
     "plotly>=5.20",
     "papermill>=2.6",  # %schedule runs notebooks with it
+    "jupyterlab-git>=0.50",  # Git panel in JupyterLab (needs the git package, install-worker adds it)
+    "nbdime>=4.0",  # readable notebook diffs
 ]
 # Install AI features: pip install jupyterhub_pilot[ai]
 ai = [

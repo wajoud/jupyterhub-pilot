@@ -468,6 +468,12 @@ Run a notebook on a timer, with no browser or server open. It runs on the team's
 
 Admins, on a worker: every job is `sudo sh -c 'ls /home/*/.config/systemd/user/jhp-*.timer'`, and a user's run log is `sudo journalctl _UID=$(id -u <user>) --user-unit 'jhp-*'` (or `systemctl --user` as that user).
 
+### Git
+
+Workers have `git`, the JupyterLab Git panel (`jupyterlab-git`) and `nbdime` for notebook diffs. In JupyterLab (`/user/<name>/lab`), the **Git** tab on the left clones, commits, pushes and shows notebook diffs cell by cell. In a terminal, `nbdiff old.ipynb new.ipynb` shows the same, and `nbdime config-git --enable --global` makes `git diff` use it.
+
+To push to GitHub, each user adds their own key from a terminal (`ssh-keygen -t ed25519`, then add `~/.ssh/id_ed25519.pub` to their GitHub account) or uses an HTTPS token. Keys stay in the user's home on the team's worker.
+
 ### Data packages
 
 Every worker has the same data stack (part of the `worker` install): pandas, polars, DuckDB, scikit-learn, matplotlib, plotly and `jupysql`, so a notebook runs the same on any team's worker. SQL over files with DuckDB:

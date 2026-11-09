@@ -157,7 +157,8 @@ Ranked by value for effort. Each needs a decision before it becomes real work.
 ### Next (protect work, reach data)
 - [ ] **Notebook backups:** home folders live only on the worker disk; nightly sync to S3 or EBS snapshots, or EFS homes (also makes moving a team to a new worker free).
 - [ ] **Data connections from Vault:** turn a user's Vault secrets into ready `%sql` / S3 connections, no passwords in notebooks (after the Vault section above).
-- [ ] **Git in the notebook:** `jupyterlab-git` + `nbdime` for readable notebook diffs.
+- [x] **Git in the notebook:** `jupyterlab-git` + `nbdime` in the worker extra, `git` in `install-worker`; README → Git.
+  - [ ] Check on a cluster: the Git tab in `/lab` (and whether Notebook 7's `/tree` shows a Git menu); `nbdiff` works.
 
 ### Later (bigger)
 - [ ] **Worker sizes per team:** bigger or GPU workers for some teams; stop idle workers to save cost.
