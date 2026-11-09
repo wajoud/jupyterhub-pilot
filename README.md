@@ -26,13 +26,16 @@ One JupyterHub for many teams. Each team gets its own worker VM, and every noteb
 ## What it does
 
 - **Team isolation.** Every JupyterHub group (a "team") is mapped to its own worker VM. When a user starts a notebook, the Hub SSHes into that team's worker and launches the user's server there, so one heavy user cannot slow down the other teams.
-- **Per-user Linux accounts.** On first login the worker creates a Linux account for the user (`alice@corp.com` → `alice`), so users cannot read each other's files.
-- **Resource limits.** Each notebook server runs under cgroups v2 memory and CPU limits (`systemd-run`).
+- **Per-user Linux accounts.** On first start the worker creates a Linux account for the user (`alice@corp.com` → `alice`), so users cannot read each other's files. Deleting the user in the Hub removes it again.
+- **Resource limits.** Each notebook server runs under cgroups v2 memory and CPU limits, for everyone, per team or per user. Idle servers are stopped after 3 hours.
 - **Crash-safe state.** Sessions and team→VM mappings live in SQLite, so a Hub restart does not lose track of running servers.
 - **Secrets.** Optional HashiCorp Vault integration injects per-user secrets as environment variables.
-- **AI magics.** `%do`, `%fix`, `%review` and `%rework` in any notebook, backed by Ollama, OpenAI/Claude/Gemini (through LiteLLM) or an MCP server.
+- **For analysts.** A team folder and a shared data folder, the same data stack on every worker (pandas, polars, DuckDB, scikit-learn, SQL in cells), Git, terminal and JupyterLab, and scheduled notebooks (`%schedule`).
+- **AI magics.** `%do`, `%fix`, `%review`, `%rework` and `%explain` in any notebook, aware of your DataFrames' columns, backed by Ollama, OpenAI/Claude/Gemini (through LiteLLM) or an MCP server.
 - **Live monitoring.** A dashboard at `/hub/monitoring` shows each worker's CPU, memory, disk and network, and each user's usage against their limits. Admins see everything; users see their own team's workers and their own row.
-- **Load testing.** `jupyterhub-pilot load-test` starts many test users at once and reports start times and which kernels hit their limits.
+- **Operations.** `pip install` + one command per machine, `jupyterhub-pilot upgrade` for new releases, and `load-test` to check a cluster.
+
+Full list, with where each feature runs, how to turn it on and whether it has been tested on EC2: **[Features](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/FEATURES.md)**.
 
 ## How it works
 
@@ -666,6 +669,7 @@ Reference (2026-11-08, ap-south-1, Ubuntu 26.04 Arm, `t4g.small` Hub + 4 workers
 
 ## More documentation
 
+- [Features](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/FEATURES.md): everything the Hub, workers and notebooks can do, and what is tested
 - [AWS EC2 Deployment Guide](https://github.com/wajoud/jupyterhub-pilot/blob/main/AWS_EC2_DEPLOYMENT.md): end-to-end on AWS
 - [Installation Guide](https://github.com/wajoud/jupyterhub-pilot/blob/main/INSTALL.md): detailed manual setup
 - [Architecture & EC2 Routing](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/ARCHITECTURE.md)
