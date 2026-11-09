@@ -408,6 +408,25 @@ Load the magics in a notebook:
 
 The LLM backend is set in `~/.jupyterhub-pilot/config.json` (per user) or `/etc/jupyterhub-pilot/config.json` (whole worker). The default is a local Ollama at `http://localhost:11434`. Setup, auto-loading for all users and cloud/MCP backends: [AI Magic Commands](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/AI_MAGICS.md).
 
+### Terminal and JupyterLab
+
+Notebook 7 is built on JupyterLab, so both come with the worker install:
+
+- **Terminal:** in the file browser, **New** → **Terminal**. It is a shell on the team's worker as the user's own Linux account: no `sudo`, same files as the notebooks, and the same RAM/CPU limit (it runs inside the server's cgroup).
+- **JupyterLab:** open `https://hub.example.com/user/<name>/lab`, or **View** → **Open JupyterLab** in a notebook. The AI magics work there too. The Hub opens the classic Notebook view (`/tree`) by default.
+
+Programs started in a terminal keep running after the browser is closed and count against the user's limit until they end, the user's server stops, or the idle culler stops the server.
+
+**Turn terminals off** (whole Hub): set `terminals_enabled` to `false` in `hub_settings.json` and restart the Hub; each server started after that has no **Terminal** menu.
+
+```bash
+F=/opt/jupyterhub-pilot/hub_settings.json
+sudo jq '.terminals_enabled = false' $F | sudo tee $F.tmp >/dev/null && sudo mv $F.tmp $F
+sudo systemctl restart jupyterhub
+```
+
+This does not stop users running shell commands: a kernel can do the same with `!ls` or `os.system`. It only removes the interactive shell.
+
 ## Monitoring dashboard
 
 Open `https://hub.example.com/hub/monitoring` (or **Monitoring** in the Hub's nav bar).
@@ -434,6 +453,7 @@ Agent status, on a worker: `sudo systemctl status jupyterhub_pilot-metrics`. Mor
 | `mapping_file` | JSON fallback for team→VM mappings, used if SQLite is unreachable |
 | `db_path` | SQLite state DB |
 | `resource_limits` | `memory_max` (e.g. `"1G"`) and `cpu_quota` (e.g. `"50%"`) per notebook server; `null` turns limits off |
+| `terminals_enabled` | `false` removes the **Terminal** menu from every server started afterwards (default: on). See [Terminal and JupyterLab](#terminal-and-jupyterlab) |
 | `on_user_delete` | What deleting a Hub user does on the worker: `"archive"` (default), `"delete"` or `"keep"`. See [Delete a user](#delete-a-user) |
 | `idle_cull` | `timeout` (seconds without activity before a server is stopped, default `10800` = 3 h) and `every` (how often to check, seconds); `null` or missing turns it off. See [Idle servers](#idle-servers-are-stopped-after-3-hours) |
 | `vault_enabled`, `vault_secret_path` | Per-user secrets from Vault; set-up walkthrough in [Security → Vault](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/SECURITY.md#4-vault-secret-injection) |

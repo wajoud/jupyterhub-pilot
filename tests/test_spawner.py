@@ -474,3 +474,21 @@ async def test_delete_forever_unsafe_name_never_reaches_shell(monkeypatch):
     with patch.object(spawner.paramiko, "SSHClient", return_value=ssh):
         await inst.delete_forever()
     ssh.exec_command.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("setting,flag", [(None, False), (True, False), (False, True)])
+async def test_terminals_switch(mock_spawner_instance, setting, flag):
+    stdin, stdout, ssh = MagicMock(), MagicMock(), MagicMock()
+    stdout.readline.return_value = "8888\n"
+    stdout.read.return_value = b""
+    stdout.channel.recv_exit_status.return_value = 0
+    ssh.exec_command.side_effect = lambda cmd, *a, **k: (stdin, stdout, None)
+    settings = {"hub_api_url": "http://hub:8081/hub/api"}
+    if setting is not None:
+        settings["terminals_enabled"] = setting
+    with patch.object(mock_spawner_instance, "_open_ssh", return_value=ssh), \
+            patch.dict(spawner.hub_settings, settings):
+        await mock_spawner_instance.start()
+    script = stdin.write.call_args[0][0]
+    assert ("--ServerApp.terminals_enabled=False" in script) is flag

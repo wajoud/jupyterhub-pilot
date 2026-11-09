@@ -589,6 +589,8 @@ class CustomSpawner(Spawner):
                 f"--ServerApp.base_url={shlex.quote(self.server.base_url)} "
                 f"--notebook-dir='~/notebook/'"
             )
+            if hub_settings.get("terminals_enabled") is False:
+                singleuser_cmd += " --ServerApp.terminals_enabled=False"
 
             # Task 2: wrap with systemd-run if cgroup limits are configured
             mem = getattr(self, "_memory_max", None)

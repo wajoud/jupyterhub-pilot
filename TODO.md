@@ -133,11 +133,11 @@ Users want to pick an `.ipynb` and have it run on a schedule (every night, every
 
 Notebook 7 is built on JupyterLab and pulls in `jupyterlab` and the terminal extension, so both are probably available already but untested and undocumented: **New → Terminal** in the file browser, and `https://<hub>/user/<name>/lab`. The Hub opens `/tree` (`c.Spawner.default_url`).
 
-- [ ] Check on a cluster: terminal opens, runs as the user's own Linux account on the team worker, no `sudo`, and stays under their RAM/CPU limit (a `stress` in the terminal is capped like a kernel). `/lab` loads with the AI magics working.
-- [ ] Decide the default: Notebook (`/tree`) or JupyterLab (`/lab`), and whether users can switch (Notebook's "Open in JupyterLab" menu).
-- [ ] Admin switch to turn terminals off (whole Hub, later per team): `ServerApp.terminals_enabled=False` in the spawn command.
-- [ ] Note for security docs: a terminal gives the same rights as code in a kernel (it already can run `os.system`), so it is not a new hole, but it does make long-running processes easy; they keep running after the browser closes and count against the user's limit.
-- [ ] README: how to open a terminal, how to use JupyterLab, how to turn terminals off.
+- [x] Decided: keep Notebook (`/tree`) as the default; JupyterLab at `/user/<name>/lab` and via **View → Open JupyterLab**.
+- [x] `terminals_enabled: false` in `hub_settings.json` adds `--ServerApp.terminals_enabled=False` to the spawn command (whole Hub). Test.
+- [x] Docs: README → Terminal and JupyterLab; `docs/SECURITY.md` §1 terminal note.
+- [ ] Check on a cluster: terminal opens as the user on the team worker, no `sudo`, a `stress` there is capped like a kernel; `/lab` loads with the AI magics; `terminals_enabled: false` removes the menu.
+- [ ] Later: turn terminals off per team (group property, like the limits).
 
 ## Ideas for a better analysis / data science setup
 

@@ -28,6 +28,8 @@ After provisioning:
 - `alice`'s notebook process runs as OS user `alice` — Bob's kernel cannot signal it
 - Each process is wrapped in a cgroup scope — memory/CPU cannot bleed across
 
+**Terminals.** Notebook's **New → Terminal** gives a shell as the same Linux user, inside the same cgroup. It is not a new permission: code in a kernel can already run any command (`!cmd`, `os.system`). What it does change is that long-running processes are easy to start and keep running after the browser closes (they count against the user's limit until the server stops). `terminals_enabled: false` in `hub_settings.json` removes the terminal; it does not stop shell commands from kernels.
+
 ---
 
 ## 2. cgroups v2 Resource Limits
