@@ -284,7 +284,7 @@ Installs from before 0.6.0 have no `idle_cull` key: culling stays off until you 
 | `hub_settings.json` (IPs, admins, domain, limits, idle timeout, Vault) | Yes: restart the Hub |
 | `user_mapping.json` + re-seeded the DB (add/change a worker) | No |
 | Groups or group members in the Admin panel | No (the user restarts their own server to move workers) |
-| A user's or team's limit (Limits page, group properties) | No (applies on the user's next server start) |
+| A user's or team's limit, or a user's Terminal off (Limits page, group properties) | No (applies on the user's next server start) |
 | The agent token | Yes: Hub and every worker's metrics agent |
 
 ## Add users and teams
@@ -420,7 +420,9 @@ Notebook 7 is built on JupyterLab, so both come with the worker install:
 
 Programs started in a terminal keep running after the browser is closed and count against the user's limit until they end, the user's server stops, or the idle culler stops the server.
 
-**Turn terminals off** (whole Hub): set `terminals_enabled` to `false` in `hub_settings.json` and restart the Hub; each server started after that has no **Terminal** menu.
+**Turn the terminal off for one user:** **Limits** in the nav bar (admins only) → the user's name → tick **Terminal off** → **Save**. It applies on their next server start, no Hub restart. **Clear** on their row turns it back on.
+
+**Turn terminals off for everyone:** set `terminals_enabled` to `false` in `hub_settings.json` and restart the Hub; each server started after that has no **Terminal** menu.
 
 ```bash
 F=/opt/jupyterhub-pilot/hub_settings.json
@@ -512,7 +514,7 @@ Agent status, on a worker: `sudo systemctl status jupyterhub_pilot-metrics`. Mor
 | `mapping_file` | JSON fallback for team→VM mappings, used if SQLite is unreachable |
 | `db_path` | SQLite state DB |
 | `resource_limits` | `memory_max` (e.g. `"1G"`) and `cpu_quota` (e.g. `"50%"`) per notebook server; `null` turns limits off |
-| `terminals_enabled` | `false` removes the **Terminal** menu from every server started afterwards (default: on). See [Terminal and JupyterLab](#terminal-and-jupyterlab) |
+| `terminals_enabled` | `false` removes the **Terminal** menu from every server started afterwards (default: on). For one user, use **Terminal off** on the Limits page. See [Terminal and JupyterLab](#terminal-and-jupyterlab) |
 | `on_user_delete` | What deleting a Hub user does on the worker: `"archive"` (default), `"delete"` or `"keep"`. See [Delete a user](#delete-a-user) |
 | `idle_cull` | `timeout` (seconds without activity before a server is stopped, default `10800` = 3 h) and `every` (how often to check, seconds); `null` or missing turns it off. See [Idle servers](#idle-servers-are-stopped-after-3-hours) |
 | `vault_enabled`, `vault_secret_path` | Per-user secrets from Vault; set-up walkthrough in [Security → Vault](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/SECURITY.md#4-vault-secret-injection) |

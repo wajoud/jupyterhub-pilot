@@ -427,8 +427,11 @@ class CustomSpawner(Spawner):
         if self.user.groups:  # start() uses the first group as the team
             props = getattr(self.user.groups[0], "properties", None)
             team_props = props if isinstance(props, dict) else None
+        user_row = _store.get_user_limits(username)
+        # Terminal off for this user (Limits page); the Hub-wide switch is checked in _launch_remote.
+        self._terminals_off: bool = bool((user_row or {}).get("terminals_off"))
         resolved = _limits.resolve(
-            _store.get_user_limits(username),
+            user_row,
             team_props,
             hub_settings.get("resource_limits"),
             lambda msg: self.log.warning("CustomSpawner: '%s': %s", username, msg),
@@ -626,7 +629,7 @@ class CustomSpawner(Spawner):
                 f"--ServerApp.base_url={shlex.quote(self.server.base_url)} "
                 f"--notebook-dir='~/notebook/'"
             )
-            if hub_settings.get("terminals_enabled") is False:
+            if hub_settings.get("terminals_enabled") is False or getattr(self, "_terminals_off", False):
                 singleuser_cmd += " --ServerApp.terminals_enabled=False"
 
             # Task 2: wrap with systemd-run if cgroup limits are configured

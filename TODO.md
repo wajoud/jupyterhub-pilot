@@ -139,7 +139,8 @@ Notebook 7 is built on JupyterLab and pulls in `jupyterlab` and the terminal ext
 - [x] `terminals_enabled: false` in `hub_settings.json` adds `--ServerApp.terminals_enabled=False` to the spawn command (whole Hub). Test.
 - [x] Docs: README → Terminal and JupyterLab; `docs/SECURITY.md` §1 terminal note.
 - [ ] Check on a cluster: terminal opens as the user on the team worker, no `sudo`, a `stress` there is capped like a kernel; `/lab` loads with the AI magics; `terminals_enabled: false` removes the menu.
-- [ ] Later: turn terminals off per team (group property, like the limits).
+- [x] Terminal off per user: **Terminal off** on the admin Limits page (SQLite `user_limits.terminals_off`); off if that or the Hub-wide switch says so. Tests; README. Branch `feature/terminal-per-user`.
+  - [ ] Check on a cluster: tick it for alice, she restarts her server, New has no Terminal; bob still has one.
 
 ## Ideas for a better analysis / data science setup
 

@@ -12,7 +12,7 @@ Hub:
 - **Idle servers are stopped after 3 hours** (`jupyterhub-idle-culler`, `idle_cull` in `hub_settings.json`). `upgrade` adds the setting; set it to `null` to keep culling off.
 - **Deleting a Hub user removes their Linux account on the worker.** Their home is archived in `/home/.deleted/` (`on_user_delete`: `archive`, `delete` or `keep`).
 - **RAM/CPU limits per team** (group properties `memory_max`, `cpu_quota` in Admin → Groups) **and per user** (new admin-only **Limits** page). No Hub restart needed.
-- `terminals_enabled: false` turns off the Terminal for every server.
+- Terminal off for everyone (`terminals_enabled: false`) or for one user (**Terminal off** on the Limits page).
 - `jupyterhub-pilot upgrade` command.
 
 Workers:

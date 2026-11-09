@@ -2,19 +2,21 @@
 {% extends "page.html" %}
 {% block main %}
 <div class="container">
-  <h1>RAM and CPU limits</h1>
+  <h1>RAM, CPU and terminal per user</h1>
   <p>
     Each value is taken from the first place that sets it: the user (this page),
     their team (<a href="{{ base_url }}admin#/groups">Admin → Groups</a> → the team → properties
     <code>memory_max</code> / <code>cpu_quota</code>), then <code>resource_limits</code> in
-    <code>hub_settings.json</code>. Changes apply on the user's next server start.
+    <code>hub_settings.json</code>. <b>Terminal off</b> removes New → Terminal for that user;
+    <code>terminals_enabled: false</code> in <code>hub_settings.json</code> turns it off for everyone.
+    Saving a user replaces all three of their settings. Changes apply on the user's next server start.
   </p>
   {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
   {% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
 
   <form method="post" class="row g-2 align-items-end mb-4">
     <input type="hidden" name="_xsrf" value="{{ xsrf_token }}" />
-    <div class="col-sm-4">
+    <div class="col-sm-3">
       <label for="username" class="form-label">User</label>
       <input id="username" name="username" class="form-control" required />
     </div>
@@ -22,25 +24,32 @@
       <label for="memory_max" class="form-label">memory_max</label>
       <input id="memory_max" name="memory_max" class="form-control" placeholder="2G" />
     </div>
-    <div class="col-sm-3">
+    <div class="col-sm-2">
       <label for="cpu_quota" class="form-label">cpu_quota</label>
       <input id="cpu_quota" name="cpu_quota" class="form-control" placeholder="100%" />
+    </div>
+    <div class="col-sm-2">
+      <div class="form-check mb-2">
+        <input id="terminals_off" name="terminals_off" type="checkbox" class="form-check-input" />
+        <label for="terminals_off" class="form-check-label">Terminal off</label>
+      </div>
     </div>
     <div class="col-sm-2">
       <button type="submit" class="btn btn-primary w-100">Save</button>
     </div>
   </form>
 
-  <h2 class="h4">Per-user limits</h2>
+  <h2 class="h4">Per-user settings</h2>
   {% if overrides %}
   <table class="table">
-    <thead><tr><th scope="col">User</th><th scope="col">memory_max</th><th scope="col">cpu_quota</th><th scope="col"></th></tr></thead>
+    <thead><tr><th scope="col">User</th><th scope="col">memory_max</th><th scope="col">cpu_quota</th><th scope="col">Terminal</th><th scope="col"></th></tr></thead>
     <tbody>
     {% for row in overrides %}
       <tr>
         <td>{{ row.username }}</td>
         <td>{{ row.memory_max or "(team / default)" }}</td>
         <td>{{ row.cpu_quota or "(team / default)" }}</td>
+        <td>{{ "off" if row.terminals_off else "(Hub setting)" }}</td>
         <td>
           <form method="post">
             <input type="hidden" name="_xsrf" value="{{ xsrf_token }}" />
@@ -53,7 +62,7 @@
     </tbody>
   </table>
   {% else %}
-  <p>None. Every user gets their team's or the default limit.</p>
+  <p>None. Every user gets their team's or the default limit, and the Hub's terminal setting.</p>
   {% endif %}
 </div>
 {% endblock main %}

@@ -528,3 +528,17 @@ def test_jit_bad_team_name_gets_shared_folder_only():
     assert "groupadd" not in script and "rm" not in script.split("fi\n", 1)[1]
     assert "/data/shared" in script
     inst.log.warning.assert_called()
+
+
+@pytest.mark.anyio
+async def test_terminal_off_for_one_user(mock_spawner_instance):
+    spawner._store.set_user_limits("test_user", None, None, True)
+    stdin, stdout, ssh = MagicMock(), MagicMock(), MagicMock()
+    stdout.readline.return_value = "8888\n"
+    stdout.read.return_value = b""
+    stdout.channel.recv_exit_status.return_value = 0
+    ssh.exec_command.side_effect = lambda cmd, *a, **k: (stdin, stdout, None)
+    with patch.object(mock_spawner_instance, "_open_ssh", return_value=ssh), \
+            patch.dict(spawner.hub_settings, {"hub_api_url": "http://hub:8081/hub/api"}):
+        await mock_spawner_instance.start()
+    assert "--ServerApp.terminals_enabled=False" in stdin.write.call_args[0][0]
