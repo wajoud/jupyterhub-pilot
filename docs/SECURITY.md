@@ -73,51 +73,130 @@ No code changes, no restarts — promote a user to admin live via the JupyterHub
 
 ## 4. Vault Secret Injection
 
-> **Goal:** Each user's notebook automatically gets their personal API keys (OpenAI key, database URL, S3 credentials) injected as environment variables at spawn time — no secrets on disk, no manual `.env` files.
+> **Goal:** each user's notebook gets their own API keys, database URLs and cloud credentials as environment variables, with no secrets in notebooks, on the worker's disk, or in `.env` files.
 
 ### How it works
 
+`install-hub` only installs the `vault` command (when HashiCorp's package repo works on your OS; otherwise it prints `Vault not installed (optional)`). It does **not** start a Vault server, create a policy or create a token. You do that once, below.
+
 ```text
-User spawns →
-  _prepare_spawn() →
-    VaultClient.get_user_secrets("alice") →
-      GET https://vault.internal/v1/secret/data/jupyterhub-pilot/alice →
-        {"OPENAI_API_KEY": "sk-alice-...", "DATABASE_URL": "postgres://..."}
-  ↓
-  self.environment.update(secrets)
-  ↓
-JupyterHub passes environment to jupyterhub-singleuser at launch
-  ↓
-Alice's kernel: os.environ["OPENAI_API_KEY"] == "sk-alice-..."
+alice clicks Start My Server
+  → the Hub reads secret/jupyterhub-pilot/alice from Vault (KV v2), using the Hub's token
+  → the key/values are added to alice's server environment
+  → the Hub sends them to the worker over SSH stdin (never on the command line, so `ps` can't show them)
+  → in alice's notebook: os.environ["OPENAI_API_KEY"]
 ```
 
-Alice's keys are never written to disk. Bob's kernel cannot see Alice's environment.
+- Secrets are read **once, at server start**. After you change a user's secret, they stop and start their server.
+- The path is `<vault_secret_path>/<Hub user name>` (the name in the Admin list, e.g. `alice` or `first.last`).
+- Vault is optional and never blocks a start: if Vault is down or the token is wrong, the server starts without secrets and the Hub logs a warning.
 
-### Setup
+### Who can see what
+
+| Who | Can see |
+|---|---|
+| The user | Their own secrets, in their kernel and terminal (`os.environ`, `env`) |
+| Other users on the same worker | Nothing: another user's process environment (`/proc/<pid>/environ`) is readable only by that user and root |
+| Admins in the Hub | Nothing through the Hub (`admin_access` is off) |
+| Root on the worker | The user's secrets while their server runs |
+| Root on the Hub | **Every** user's secrets: the Hub's Vault token is in `/etc/jupyterhub-pilot/hub.env` (root only). Give it read-only access to this one path, nothing else |
+
+A user can print their own secret in a notebook and save it in the `.ipynb`. Tell users to read them with `os.environ`, never to print them.
+
+### Step 1: a Vault server
+
+**Testing (dev mode, on the Hub).** Keeps everything in memory, so secrets are gone when it stops. KV v2 is already enabled at `secret/`:
 
 ```bash
-# On the Hub VM before starting JupyterHub:
-export VAULT_ADDR=http://10.0.0.5:8200
-export VAULT_TOKEN=your-policy-scoped-token
+vault version                     # check install-hub installed it
+vault server -dev -dev-listen-address=127.0.0.1:8200 > /tmp/vault-dev.log 2>&1 &
+grep "Root Token" /tmp/vault-dev.log
+export VAULT_ADDR=http://127.0.0.1:8200
+export VAULT_TOKEN=<the root token>
 ```
 
-```json
-// hub_settings.json
-{
-  "vault_enabled": true,
-  "vault_secret_path": "secret/jupyterhub-pilot"
+**Production.** Use your company's Vault if it has one (skip to step 2 with its address and an admin token). Otherwise run one: the `vault` package ships `/etc/vault.d/vault.hcl` and a `vault` systemd service. Follow HashiCorp's [deployment guide](https://developer.hashicorp.com/vault/tutorials/day-one-raft/raft-deployment-guide) (`vault operator init`, keep the unseal keys and root token safe, `vault operator unseal` after every restart), then enable KV v2:
+
+```bash
+vault secrets enable -path=secret kv-v2
+```
+
+Run Vault on a private IP only; the Hub is its only client.
+
+### Step 2: a read-only policy and token for the Hub
+
+```bash
+vault policy write jupyterhub-pilot - << 'POLICY'
+path "secret/data/jupyterhub-pilot/*" {
+  capabilities = ["read"]
 }
+POLICY
+
+# Periodic token: lives as long as it is renewed within 32 days.
+vault token create -policy=jupyterhub-pilot -no-default-policy -orphan -period=768h -field=token
 ```
 
+The Hub does not renew the token itself. Renew it from a root cron job on the Hub, `/etc/cron.weekly/vault-renew` (`sudo chmod 755` it):
+
 ```bash
-# Store each user's secrets in Vault:
+#!/bin/sh
+set -a; . /etc/jupyterhub-pilot/hub.env; set +a
+vault token renew > /dev/null
+```
+
+If the token expires, servers start without secrets and the Hub log says `permission denied reading secrets`.
+
+### Step 3: turn it on in the Hub
+
+```bash
+# Address and token go in the root-only env file the jupyterhub service reads
+echo 'VAULT_ADDR=http://127.0.0.1:8200' | sudo tee -a /etc/jupyterhub-pilot/hub.env > /dev/null
+echo 'VAULT_TOKEN=<token from step 2>' | sudo tee -a /etc/jupyterhub-pilot/hub.env > /dev/null
+
+F=/opt/jupyterhub-pilot/hub_settings.json
+sudo jq '.vault_enabled = true | .vault_secret_path = "secret/jupyterhub-pilot"' $F | sudo tee $F.tmp >/dev/null && sudo mv $F.tmp $F
+sudo systemctl restart jupyterhub
+```
+
+The restart stops running servers.
+
+### Step 4: add a user's secrets
+
+With an admin token (not the Hub's read-only one):
+
+```bash
 vault kv put secret/jupyterhub-pilot/alice \
     OPENAI_API_KEY="sk-alice-..." \
     DATABASE_URL="postgres://alice:pass@db.internal/mydb"
 
-vault kv put secret/jupyterhub-pilot/bob \
-    OPENAI_API_KEY="sk-bob-..." \
-    S3_BUCKET="bob-data-bucket"
+vault kv patch secret/jupyterhub-pilot/alice S3_BUCKET="alice-data"   # add one key
+vault kv get secret/jupyterhub-pilot/alice                           # check
+vault kv metadata delete secret/jupyterhub-pilot/alice               # remove all of alice's secrets
 ```
 
-**Graceful degradation:** If Vault is unreachable, the spawn continues uninterrupted — Vault is opt-in. A warning is logged, but no exception is raised.
+Keys become environment variable names, so use `UPPER_CASE` names without spaces or dashes.
+
+### Step 5: the user reads them
+
+Alice stops and starts her server (Hub home → **Stop My Server** → **Start My Server**), then in a notebook:
+
+```python
+import os
+key = os.environ["OPENAI_API_KEY"]
+```
+
+### Check it works
+
+```bash
+sudo journalctl -u jupyterhub | grep -i vault
+```
+
+| Log line | Meaning |
+|---|---|
+| `Vault injected 2 secret(s) for 'alice'` | Working |
+| *(nothing for that user)* | No secret stored at `secret/jupyterhub-pilot/alice`, or `vault_enabled` is false |
+| `cannot connect to Vault at ...` | Vault down, or wrong `VAULT_ADDR` |
+| `permission denied reading secrets` | Token expired, or its policy doesn't cover the path |
+| `Vault request timed out` | Vault slower than 5 s |
+
+Test the Hub's own token from the Hub: `sudo sh -c 'set -a; . /etc/jupyterhub-pilot/hub.env; vault kv get secret/jupyterhub-pilot/alice'`.

@@ -428,7 +428,7 @@ Agent status, on a worker: `sudo systemctl status jupyterhub_pilot-metrics`. Mor
 | `resource_limits` | `memory_max` (e.g. `"1G"`) and `cpu_quota` (e.g. `"50%"`) per notebook server; `null` turns limits off |
 | `on_user_delete` | What deleting a Hub user does on the worker: `"archive"` (default), `"delete"` or `"keep"`. See [Delete a user](#delete-a-user) |
 | `idle_cull` | `timeout` (seconds without activity before a server is stopped, default `10800` = 3 h) and `every` (how often to check, seconds); `null` or missing turns it off. See [Idle servers](#idle-servers-are-stopped-after-3-hours) |
-| `vault_enabled`, `vault_secret_path` | Vault secret injection; see [Security](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/SECURITY.md) |
+| `vault_enabled`, `vault_secret_path` | Per-user secrets from Vault; set-up walkthrough in [Security → Vault](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/SECURITY.md#4-vault-secret-injection) |
 
 ### Change the per-user RAM and CPU limit
 
@@ -563,6 +563,13 @@ Expect `1 killed`. Only the kernel dies; the user's notebook server keeps runnin
 2. `jupyterhub-pilot load-test --hub $HUB --teams team_alpha --users 1 --no-workload`, and don't open it in a browser.
 3. Within about 3 minutes `sudo journalctl -u jupyterhub | grep -i cull` shows the culler stopping `lt-001`, and Admin shows it stopped.
 4. Set the timeout back to `10800` / `300`, restart, and `jupyterhub-pilot load-test --hub $HUB --users 1 --cleanup`.
+
+**6. Vault secrets (optional)**
+
+1. Set up Vault as in [Security → Vault](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/SECURITY.md#4-vault-secret-injection) (dev mode is fine for a test).
+2. `vault kv put secret/jupyterhub-pilot/lt-001 TEST_SECRET=hello`, then `jupyterhub-pilot load-test --hub $HUB --teams team_alpha --users 1 --no-workload`.
+3. `sudo journalctl -u jupyterhub | grep "Vault injected 1 secret(s) for 'lt-001'"`. Admins can't open lt-001's notebook, so check on the worker: `sudo cat /proc/$(sudo cat /home/lt-001/.jupyterhub-pilot-lt-001.pid)/environ | tr '\0' '\n' | grep TEST_SECRET`.
+4. `jupyterhub-pilot load-test --hub $HUB --users 1 --cleanup`.
 
 `--cleanup` removes `--users` users with that `--prefix` (default `lt`, 10 users), so pass the same numbers you tested with. Their Linux accounts go too; homes are archived in `/home/.deleted/` on each worker (`sudo rm -rf /home/.deleted/lt-*` to free the disk). When done, revoke the token on the Token page.
 

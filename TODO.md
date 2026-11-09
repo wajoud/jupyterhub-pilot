@@ -101,11 +101,11 @@ Today `resource_limits` in `hub_settings.json` is one limit for every user, and 
 
 `install-hub` only installs the `vault` binary (on Ubuntu 26.04 from HashiCorp's 24.04 repo). It does not start a Vault server, create a token or a policy, or say how a user reads their secrets. `docs/SECURITY.md` §4 assumes a Vault server already exists.
 
-- [ ] Docs: one end-to-end walkthrough: start Vault (dev mode for testing, a real server for production), enable KV v2 at `secret/`, create a read-only policy + token for the Hub, put `VAULT_ADDR`/`VAULT_TOKEN` in `hub.env`, set `vault_enabled: true`, restart.
-- [ ] Docs: how to add a user's secrets (`vault kv put secret/jupyterhub-pilot/<user> KEY=value`), and how the user reads them in a notebook (`os.environ["KEY"]`, after their next server start).
-- [ ] Docs: how to check it works (Hub log line when secrets load or Vault is unreachable) and who can see what.
-- [ ] Check on the Hub whether `vault` actually got installed on 26.04 (`vault version`); if the install printed "Vault not installed", say so in the docs.
-- [ ] Add a Vault step to README → Test a cluster.
+- [x] Docs (`docs/SECURITY.md` §4): what `install-hub` does and doesn't do, dev-mode and production server, read-only policy + periodic token (+ weekly renew cron), `hub.env` + `vault_enabled`, adding and reading secrets, log lines, who can see what.
+- [x] README → Test a cluster step 6 (Vault).
+- [ ] Check on the Hub whether `vault` got installed on Ubuntu 26.04 (`vault version`); if `install-hub` printed "Vault not installed", say so in the docs.
+- [ ] Run step 6 on a cluster.
+- [ ] Later: have the Hub renew its own token (`/v1/auth/token/renew-self`) so the cron job is not needed.
 
 ## Upgrades: update only what changed, keep everything working
 
