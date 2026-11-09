@@ -268,19 +268,8 @@ class CustomSpawner(Spawner):
 
         target_user = self._os_username()
 
-        # Open SSH connection as admin user
-        ssh = paramiko.SSHClient()
-        ssh.load_system_host_keys()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        try:
-            ssh.connect(
-                server_info["server_ip"],
-                username=admin_user,
-                key_filename=server_info["server_ssh_key"],
-                timeout=10,
-            )
-        except Exception as e:
-            self.log.warning(f"JIT Provisioner failed to connect as {admin_user}: {e}")
+        ssh = self._open_admin_ssh(server_info)
+        if ssh is None:
             return
 
         u = shlex.quote(target_user)
@@ -319,6 +308,24 @@ class CustomSpawner(Spawner):
                 self.log.info(f"JIT Provisioning succeeded for user {target_user}.")
         finally:
             ssh.close()
+
+    def _open_admin_ssh(self, server_info: Dict[str, Any]) -> Optional[paramiko.SSHClient]:
+        """SSH to the worker as ``admin_ssh_user`` (has sudo); None if it fails (logged)."""
+        admin_user = server_info["admin_ssh_user"]
+        ssh = paramiko.SSHClient()
+        ssh.load_system_host_keys()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        try:
+            ssh.connect(
+                server_info["server_ip"],
+                username=admin_user,
+                key_filename=server_info["server_ssh_key"],
+                timeout=10,
+            )
+        except Exception as e:  # noqa: BLE001
+            self.log.warning(f"CustomSpawner: cannot SSH to {server_info['server_ip']} as {admin_user}: {e}")
+            return None
+        return ssh
 
     def _open_ssh(self, server_info: Dict[str, Any]) -> paramiko.SSHClient:
         """
@@ -777,6 +784,67 @@ class CustomSpawner(Spawner):
         _store.set_session(username, status="stopped")
         self.log.info("CustomSpawner.poll: process stopped for '%s'", username)
         return 0
+
+    def _delete_linux_user(self) -> None:
+        """Blocking part of ``delete_forever()``; runs in a worker thread."""
+        mode = hub_settings.get("on_user_delete", "archive")
+        if mode == "keep":
+            return
+        if mode not in ("archive", "delete"):
+            self.log.error("CustomSpawner: on_user_delete=%r is not archive/delete/keep; keeping the account", mode)
+            return
+        groups = [g.name for g in self.user.groups]
+        if not groups:
+            self.log.info("CustomSpawner: '%s' has no team; no worker account to delete", self.user.name)
+            return
+        server_info = self._get_server_info(groups[0])
+        if server_info.get("ssh_user") or not server_info.get("admin_ssh_user"):
+            # A shared ssh_user account belongs to the whole team: never delete it.
+            return
+        os_user = self._os_username()  # validated: safe in the shell script
+        u = shlex.quote(os_user)
+        if mode == "archive":
+            # Notebooks are kept in /home/.deleted; `sudo rm -rf /home/.deleted/<user>-*` frees the disk.
+            remove = (
+                f"sudo mkdir -p /home/.deleted && sudo chmod 700 /home/.deleted\n"
+                f"[ -d /home/{os_user} ] && sudo mv /home/{os_user} /home/.deleted/{os_user}-$(date +%Y%m%d-%H%M%S)\n"
+                f"sudo userdel {u}\n"
+            )
+        else:
+            remove = f"sudo userdel -r {u} 2>&1 | grep -v 'mail spool' || true\n"
+        script = (
+            f"id {u} >/dev/null 2>&1 || exit 0\n"
+            f"sudo loginctl disable-linger {u} || true\n"
+            f"sudo pkill -KILL -u {u} || true\n"
+            f"sleep 1\n"
+            f"{remove}"
+            f"! id {u} >/dev/null 2>&1\n"
+        )
+        ssh = self._open_admin_ssh(server_info)
+        if ssh is None:  # worker down: log, don't block deleting the Hub user
+            self.log.warning(
+                "CustomSpawner: Linux user '%s' on %s NOT deleted (worker unreachable); remove it by hand",
+                os_user, server_info["server_ip"],
+            )
+            return
+        try:
+            _, stdout, stderr = ssh.exec_command(script)
+            if stdout.channel.recv_exit_status() != 0:
+                self.log.error(
+                    "CustomSpawner: deleting Linux user '%s' on %s failed: %s",
+                    os_user, server_info["server_ip"], stderr.read().decode(),
+                )
+            else:
+                self.log.info("CustomSpawner: Linux user '%s' on %s deleted (%s)", os_user, server_info["server_ip"], mode)
+        finally:
+            ssh.close()
+
+    async def delete_forever(self) -> None:
+        """Hub user deleted: remove their Linux account on the team's worker (``on_user_delete``)."""
+        try:
+            await asyncio.to_thread(self._delete_linux_user)
+        except Exception as exc:  # noqa: BLE001
+            self.log.error("CustomSpawner: could not delete Linux user for '%s': %s", self.user.name, exc)
 
     def clear_state(self) -> None:
         """

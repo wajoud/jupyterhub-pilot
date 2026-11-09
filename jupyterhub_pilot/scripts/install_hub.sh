@@ -74,6 +74,7 @@ cat > "$CONF/hub_settings.json" << EOF
     "memory_max": "1G",
     "cpu_quota": "50%"
   },
+  "on_user_delete": "archive",
   "idle_cull": {
     "timeout": 10800,
     "every": 300

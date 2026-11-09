@@ -292,6 +292,20 @@ Rules:
 - Keep each user in **one** team group. If a user is in several, the first group is used.
 - **Make someone an admin:** add their username to `admin_users` in `hub_settings.json` and restart the Hub, or tick **Admin** on their user in the Admin panel.
 
+### Delete a user
+
+**Admin** → the user → **Delete User** (stop their server first). The Hub then SSHes to their team's worker as `admin_ssh_user` and removes their Linux account. What happens to their files is set by `on_user_delete` in `hub_settings.json`:
+
+| `on_user_delete` | Linux account | `/home/<user>` (notebooks) |
+|---|---|---|
+| `"archive"` (default) | deleted | moved to `/home/.deleted/<user>-<date>` (root only) |
+| `"delete"` | deleted | deleted |
+| `"keep"` | kept | kept |
+
+- Teams with a shared `ssh_user` are skipped: that account belongs to the whole team.
+- If the worker is down, the Hub user is still deleted and the Hub log says `Linux user '<user>' ... NOT deleted`; run `sudo pkill -u <user>; sudo userdel -r <user>` on the worker later.
+- Archived homes use disk until you remove them: `sudo rm -rf /home/.deleted/<user>-*` on the worker.
+
 ## Add more worker servers
 
 Use this to give a new team its own VM (or to move a team to a bigger VM). No Hub restart is needed.
@@ -364,7 +378,7 @@ To move a team to another VM: set up the new worker (step 2) and run `add-worker
    ```
 
 3. Delete the group in **Admin** → **Groups**, or move its users to another team.
-4. Copy any notebooks you want to keep from the worker's `/home/<user>/notebook`, then shut the VM down.
+4. Copy any notebooks you want to keep from the worker's `/home/<user>/notebook` (and `/home/.deleted/` for users deleted earlier), then shut the VM down.
 
 ## Using the notebooks and AI magics
 
@@ -411,6 +425,7 @@ Agent status, on a worker: `sudo systemctl status jupyterhub_pilot-metrics`. Mor
 | `mapping_file` | JSON fallback for team→VM mappings, used if SQLite is unreachable |
 | `db_path` | SQLite state DB |
 | `resource_limits` | `memory_max` (e.g. `"1G"`) and `cpu_quota` (e.g. `"50%"`) per notebook server; `null` turns limits off |
+| `on_user_delete` | What deleting a Hub user does on the worker: `"archive"` (default), `"delete"` or `"keep"`. See [Delete a user](#delete-a-user) |
 | `idle_cull` | `timeout` (seconds without activity before a server is stopped, default `10800` = 3 h) and `every` (how often to check, seconds); `null` or missing turns it off. See [Idle servers](#idle-servers-are-stopped-after-3-hours) |
 | `vault_enabled`, `vault_secret_path` | Vault secret injection; see [Security](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/SECURITY.md) |
 
@@ -537,7 +552,7 @@ Expect `1 killed`. Only the kernel dies; the user's notebook server keeps runnin
 3. Within about 3 minutes `sudo journalctl -u jupyterhub | grep -i cull` shows the culler stopping `lt-001`, and Admin shows it stopped.
 4. Set the timeout back to `10800` / `300`, restart, and `jupyterhub-pilot load-test --hub $HUB --users 1 --cleanup`.
 
-`--cleanup` removes `--users` users with that `--prefix` (default `lt`, 10 users), so pass the same numbers you tested with. When done, revoke the token on the Token page.
+`--cleanup` removes `--users` users with that `--prefix` (default `lt`, 10 users), so pass the same numbers you tested with. Their Linux accounts go too; homes are archived in `/home/.deleted/` on each worker (`sudo rm -rf /home/.deleted/lt-*` to free the disk). When done, revoke the token on the Token page.
 
 Reference (2026-11-08, ap-south-1, Ubuntu 26.04 Arm, `t4g.small` Hub + 4 workers, 0.5.1, JupyterHub 6.2.0, limit `1G`/`50%`): step 1 8/8 ready, median 7.6 s; step 2 20/20 ready, median 8.8 s, max 13.3 s, 20 kernels finished; step 3 kernel killed, server kept running.
 

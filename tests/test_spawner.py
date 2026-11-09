@@ -398,3 +398,79 @@ def test_jit_provisioning_never_sends_unsafe_name():
     with patch.object(spawner.paramiko, "SSHClient", return_value=ssh), pytest.raises(RuntimeError):
         inst._provision_user_jit(JIT_SERVER)
     ssh.exec_command.assert_not_called()
+
+
+def _delete_spawner(server_info, name="alice"):
+    inst = CustomSpawner()
+    inst.user.name = name
+    group = MagicMock()
+    group.name = "team_alpha"
+    inst.user.groups = [group]
+    inst._get_server_info = MagicMock(return_value=server_info)
+    return inst
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("mode", ["archive", None])
+async def test_delete_forever_archives_home_by_default(mode, monkeypatch):
+    monkeypatch.setattr(spawner, "hub_settings", {} if mode is None else {"on_user_delete": mode})
+    inst = _delete_spawner(JIT_SERVER)
+    ssh = _jit_ssh()
+    with patch.object(spawner.paramiko, "SSHClient", return_value=ssh):
+        await inst.delete_forever()
+    script = ssh.exec_command.call_args.args[0]
+    assert "sudo pkill -KILL -u alice" in script
+    assert "sudo mv /home/alice /home/.deleted/alice-" in script
+    assert "sudo userdel alice" in script and "userdel -r" not in script
+    ssh.connect.assert_called_once()
+    assert ssh.connect.call_args.kwargs["username"] == "ubuntu"
+
+
+@pytest.mark.anyio
+async def test_delete_forever_delete_mode_removes_home(monkeypatch):
+    monkeypatch.setattr(spawner, "hub_settings", {"on_user_delete": "delete"})
+    inst = _delete_spawner(JIT_SERVER)
+    ssh = _jit_ssh()
+    with patch.object(spawner.paramiko, "SSHClient", return_value=ssh):
+        await inst.delete_forever()
+    assert "sudo userdel -r alice" in ssh.exec_command.call_args.args[0]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "settings,server",
+    [
+        ({"on_user_delete": "keep"}, JIT_SERVER),
+        ({"on_user_delete": "typo"}, JIT_SERVER),
+        ({}, {**JIT_SERVER, "ssh_user": "shared"}),  # shared team account: never deleted
+        ({}, {"server_ip": "10.0.0.1", "server_ssh_key": "/k"}),  # no admin_ssh_user
+    ],
+)
+async def test_delete_forever_skips(settings, server, monkeypatch):
+    monkeypatch.setattr(spawner, "hub_settings", settings)
+    inst = _delete_spawner(server)
+    ssh = _jit_ssh()
+    with patch.object(spawner.paramiko, "SSHClient", return_value=ssh):
+        await inst.delete_forever()
+    ssh.exec_command.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_delete_forever_unreachable_worker_only_logs(monkeypatch):
+    monkeypatch.setattr(spawner, "hub_settings", {})
+    inst = _delete_spawner(JIT_SERVER)
+    ssh = _jit_ssh()
+    ssh.connect.side_effect = OSError("no route")
+    with patch.object(spawner.paramiko, "SSHClient", return_value=ssh):
+        await inst.delete_forever()  # must not raise
+    assert any("NOT deleted" in str(c) for c in inst.log.warning.call_args_list)
+
+
+@pytest.mark.anyio
+async def test_delete_forever_unsafe_name_never_reaches_shell(monkeypatch):
+    monkeypatch.setattr(spawner, "hub_settings", {})
+    inst = _delete_spawner(JIT_SERVER, name='x";rm -rf /;"')
+    ssh = _jit_ssh()
+    with patch.object(spawner.paramiko, "SSHClient", return_value=ssh):
+        await inst.delete_forever()
+    ssh.exec_command.assert_not_called()

@@ -81,10 +81,11 @@ ap-south-1, Ubuntu 26.04 Arm, `t4g.small` everywhere, JupyterHub 6.2.0, Notebook
 
 Today deleting a user in the Hub (Admin page, API, or `load-test --cleanup`) leaves their Linux account and `/home/<user>` on the team's worker.
 
-- [ ] When a Hub user is deleted, SSH to their team's worker as `admin_ssh_user` and remove the Linux account (`userdel -r`), stopping any leftover processes first.
-- [ ] This deletes their notebooks: decide whether to keep a copy of `/home/<user>/notebook` first or make removal opt-in.
-- [ ] Skip teams that use a shared `ssh_user` (never delete that account), and log, not fail, if the worker is unreachable.
-- [ ] Tests, and update README (Remove a worker server, Test a cluster cleanup note) and the `load_test.py` docstring.
+- [x] `CustomSpawner.delete_forever()` (JupyterHub calls it on user delete): SSH as `admin_ssh_user`, kill leftover processes, disable linger, remove the account.
+- [x] `on_user_delete` setting: `archive` (default: home moved to `/home/.deleted/<user>-<date>`), `delete`, `keep`.
+- [x] Shared `ssh_user` teams skipped; unreachable worker logs `NOT deleted`, the Hub user is still removed.
+- [x] Tests; README (Delete a user, Remove a worker server, Test a cluster cleanup), `load_test.py` docstring.
+- [ ] Check on a cluster: `load-test --cleanup` removes `lt-*` accounts and archives their homes.
 
 ## Change RAM/CPU limits from the Admin panel
 
