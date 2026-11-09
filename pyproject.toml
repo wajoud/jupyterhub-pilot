@@ -54,6 +54,7 @@ Repository = "https://github.com/wajoud/jupyterhub-pilot.git"
 hub = [
     "jupyterhub>=5.3,<7",  # 5.3+: shared-password test login; tested on 6.2
     "oauthenticator>=16.0",  # Google login
+    "jupyterhub-idle-culler>=1.4",  # stops idle servers (hub_settings "idle_cull")
     "paramiko>=3.4.0,<6.0",
     "websockets>=12.0",
 ]

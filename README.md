@@ -252,11 +252,28 @@ curl -X DELETE -H "Authorization: token <ADMIN_API_TOKEN>" \
   https://hub.example.com/hub/api/users/alice/server
 ```
 
+### Idle servers are stopped after 3 hours
+
+The Hub runs [`jupyterhub-idle-culler`](https://github.com/jupyterhub/jupyterhub-idle-culler), which stops a notebook server after 3 hours with no activity, so forgotten servers don't hold RAM on the worker. Activity means the browser talking to the server, or a kernel sending output. The user's files stay; only what is in memory (variables, loaded DataFrames) is lost: start the server again and re-run the notebook.
+
+A job that runs longer than the timeout **without printing anything** can be stopped mid-run. Print progress now and then, or raise the timeout.
+
+Change the timeout (seconds) or turn it off, on the Hub, then restart:
+
+```bash
+F=/opt/jupyterhub-pilot/hub_settings.json
+sudo jq '.idle_cull = {"timeout": 10800, "every": 300}' $F | sudo tee $F.tmp >/dev/null && sudo mv $F.tmp $F
+# off: sudo jq '.idle_cull = null' ...
+sudo systemctl restart jupyterhub
+```
+
+Installs from before 0.6.0 have no `idle_cull` key, so culling stays off until you add it with the command above.
+
 ### When do I need a restart?
 
 | You changed | Restart needed? |
 |---|---|
-| `hub_settings.json` (IPs, admins, domain, limits, Vault) | Yes: restart the Hub |
+| `hub_settings.json` (IPs, admins, domain, limits, idle timeout, Vault) | Yes: restart the Hub |
 | `user_mapping.json` + re-seeded the DB (add/change a worker) | No |
 | Groups or group members in the Admin panel | No (the user restarts their own server to move workers) |
 | The agent token | Yes: Hub and every worker's metrics agent |
@@ -394,6 +411,7 @@ Agent status, on a worker: `sudo systemctl status jupyterhub_pilot-metrics`. Mor
 | `mapping_file` | JSON fallback for team→VM mappings, used if SQLite is unreachable |
 | `db_path` | SQLite state DB |
 | `resource_limits` | `memory_max` (e.g. `"1G"`) and `cpu_quota` (e.g. `"50%"`) per notebook server; `null` turns limits off |
+| `idle_cull` | `timeout` (seconds without activity before a server is stopped, default `10800` = 3 h) and `every` (how often to check, seconds); `null` or missing turns it off. See [Idle servers](#idle-servers-are-stopped-after-3-hours) |
 | `vault_enabled`, `vault_secret_path` | Vault secret injection; see [Security](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/SECURITY.md) |
 
 ### Change the per-user RAM and CPU limit
@@ -511,6 +529,13 @@ Expect `1 killed`. Only the kernel dies; the user's notebook server keeps runnin
 3. Watch `sudo journalctl -u jupyterhub -f | grep CustomSpawner.poll`. For 5 minutes the server still shows running (`SSH check failed`); then `marking 'lt-001' stopped` and Admin shows it stopped. **Stop Server** in Admin also clears it right away.
 4. Start the VM again (its private IP stays the same, no `add-worker` needed). The card comes back in about a minute and the user can start again.
 5. `jupyterhub-pilot load-test --hub $HUB --users 1 --cleanup`
+
+**5. Idle servers are stopped**
+
+1. Set a short timeout: `sudo jq '.idle_cull = {"timeout": 120, "every": 30}' $F | sudo tee $F.tmp >/dev/null && sudo mv $F.tmp $F`, then `sudo systemctl restart jupyterhub`.
+2. `jupyterhub-pilot load-test --hub $HUB --teams team_alpha --users 1 --no-workload`, and don't open it in a browser.
+3. Within about 3 minutes `sudo journalctl -u jupyterhub | grep -i cull` shows the culler stopping `lt-001`, and Admin shows it stopped.
+4. Set the timeout back to `10800` / `300`, restart, and `jupyterhub-pilot load-test --hub $HUB --users 1 --cleanup`.
 
 `--cleanup` removes `--users` users with that `--prefix` (default `lt`, 10 users), so pass the same numbers you tested with. When done, revoke the token on the Token page.
 

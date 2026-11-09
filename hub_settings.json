@@ -22,6 +22,12 @@
         "cpu_quota": "50%"
     },
 
+    "_comment_idle_cull": "Stop a user's server after `timeout` seconds without activity (3 h). Checked every `every` seconds. Set to null to disable.",
+    "idle_cull": {
+        "timeout": 10800,
+        "every": 300
+    },
+
     "_comment_vault": "HashiCorp Vault integration. Secrets are read from secret/jupyterhub-pilot/<username>. Set VAULT_ADDR and VAULT_TOKEN env vars on the Hub VM. Disable by omitting or setting vault_enabled to false.",
     "vault_enabled": false,
     "vault_secret_path": "secret/jupyterhub-pilot"

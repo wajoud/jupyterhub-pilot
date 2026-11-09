@@ -74,3 +74,44 @@ def test_test_password_switches_to_shared_password_login(monkeypatch):
     assert fresh.JupyterHub.authenticator_class == "shared-password"
     assert fresh.SharedPasswordAuthenticator.user_password == "test-password-123"
     assert fresh.SharedPasswordAuthenticator.admin_password == "a" * 32
+
+
+def _reload_with(monkeypatch, settings):
+    import importlib
+    from io import StringIO
+    from unittest.mock import MagicMock
+
+    fresh = MagicMock()
+    monkeypatch.setattr(builtins, "get_config", lambda: fresh, raising=False)
+
+    def fake_open(file, *args, **kwargs):
+        if "hub_settings.json" in str(file):
+            return StringIO(json.dumps(settings))
+        return orig_open(file, *args, **kwargs)
+
+    builtins.open = fake_open
+    try:
+        importlib.reload(jupyterhub_config)
+    finally:
+        builtins.open = orig_open
+    return fresh
+
+
+def test_idle_cull_registers_culler_service(monkeypatch):
+    fresh = _reload_with(monkeypatch, {**dummy_hub_settings, "idle_cull": {"timeout": 10800, "every": 300}})
+    (service,) = fresh.JupyterHub.services
+    assert service["name"] == "idle-culler"
+    assert "--timeout=10800" in service["command"]
+    assert "--cull-every=300" in service["command"]
+    assert not any("cull-users" in arg for arg in service["command"])
+    (role,) = fresh.JupyterHub.load_roles
+    assert role["services"] == ["idle-culler"]
+    assert "delete:servers" in role["scopes"]
+    assert "admin:users" not in role["scopes"]
+
+
+def test_idle_cull_off_when_missing_or_null(monkeypatch):
+    for settings in (dummy_hub_settings, {**dummy_hub_settings, "idle_cull": None}):
+        fresh = _reload_with(monkeypatch, settings)
+        # MagicMock auto-creates attributes; check nothing was assigned.
+        assert "services" not in vars(fresh.JupyterHub)

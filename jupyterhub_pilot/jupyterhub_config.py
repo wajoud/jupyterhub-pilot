@@ -7,6 +7,7 @@
 
 import json
 import os
+import sys
 
 from oauthenticator.google import GoogleOAuthenticator
 
@@ -77,6 +78,33 @@ c.JupyterHub.allow_named_servers = False
 # -------------------------------------------------
 c.JupyterHub.spawner_class = CustomSpawner
 c.Spawner.default_url = "/tree"
+
+# -------------------------------------------------
+# Idle culling: stop servers nobody used for `timeout` seconds (frees worker RAM)
+# -------------------------------------------------
+# Missing or null in hub_settings.json = off. Files stay; only in-memory state is lost.
+idle_cull = hub_settings.get("idle_cull")
+if idle_cull:
+    c.JupyterHub.services = [
+        {
+            "name": "idle-culler",
+            "command": [
+                sys.executable,
+                "-m",
+                "jupyterhub_idle_culler",
+                f"--timeout={int(idle_cull['timeout'])}",
+                f"--cull-every={int(idle_cull.get('every', 300))}",
+            ],
+        }
+    ]
+    # Stop servers only; never --cull-users (that would delete Hub users).
+    c.JupyterHub.load_roles = [
+        {
+            "name": "idle-culler",
+            "scopes": ["list:users", "read:users:activity", "read:servers", "delete:servers"],
+            "services": ["idle-culler"],
+        }
+    ]
 
 # -------------------------------------------------
 # Cookie & Security Settings

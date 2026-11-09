@@ -142,7 +142,9 @@ Notebook 7 is built on JupyterLab and pulls in `jupyterlab` and the terminal ext
 Ranked by value for effort. Each needs a decision before it becomes real work.
 
 ### First (small effort)
-- [ ] **Idle culling:** stop servers idle for N minutes (JupyterHub's `jupyterhub-idle-culler` as a Hub service). Frees RAM on small workers (2 GiB, 1G per user).
+- [x] **Idle culling:** `jupyterhub-idle-culler` as a Hub service, `idle_cull` in `hub_settings.json` (default 3 h, on for new installs, off for old ones until the key is added). Branch `feature/todo-0.6.0`.
+  - [ ] Check on a cluster: README → Test a cluster step 5 (server stopped after a 120 s timeout).
+  - [ ] Check whether a kernel that runs a long silent cell (no output) keeps the server alive; if not, keep the "print progress" advice in README or raise the default.
 - [ ] **Shared team folder:** `/data/<team>` writable by the team (a Linux group per team, users added at spawn) and a read-only `/data/shared` for reference datasets; set up by `install-worker`.
 - [ ] **Same data stack on every worker:** pinned pandas, polars, DuckDB, scikit-learn, matplotlib/plotly, `jupysql`, so a notebook runs the same on any team's worker.
 
