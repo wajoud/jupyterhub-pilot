@@ -83,3 +83,16 @@ def test_hub_restart_needs_confirmation(monkeypatch, tmp_path):
         assert upgrade.migrate(yes=False) == 0
     run.assert_not_called()
     assert (tmp_path / "version").read_text().strip()
+
+
+def test_worker_packages_installed_only_when_missing(monkeypatch):
+    import shutil
+
+    monkeypatch.setattr(shutil, "which", lambda c: None if c == "git" else "/usr/bin/" + c)
+    with patch.object(upgrade.subprocess, "run") as run:
+        assert upgrade.install_worker_packages("") == "installed git"
+    run.assert_called_once_with(["apt-get", "install", "-y", "git"], check=True)
+    monkeypatch.setattr(shutil, "which", lambda c: "/usr/bin/" + c)
+    with patch.object(upgrade.subprocess, "run") as run:
+        assert upgrade.install_worker_packages("") == ""
+    run.assert_not_called()

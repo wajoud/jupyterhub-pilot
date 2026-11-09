@@ -83,9 +83,24 @@ def fix_metrics_url(_config_dir: str) -> str:
     return "metrics agent URL moved to /hub/monitoring/ws"
 
 
+def install_worker_packages(_config_dir: str) -> str:
+    """0.6.0: team folders need setfacl (acl); the Git panel needs git."""
+    import shutil
+
+    missing = [p for p, cmd in (("acl", "setfacl"), ("git", "git")) if shutil.which(cmd) is None]
+    if not missing:
+        return ""
+    if shutil.which("apt-get"):
+        subprocess.run(["apt-get", "install", "-y", *missing], check=True)
+    else:
+        subprocess.run(["dnf", "install", "-y", *missing], check=True)
+    return f"installed {' '.join(missing)}"
+
+
 STEPS: List[Tuple[str, str, Callable[[str], str]]] = [
     ("0.4.0", "worker", fix_metrics_url),
     ("0.6.0", "hub", add_settings_defaults),
+    ("0.6.0", "worker", install_worker_packages),
 ]
 
 

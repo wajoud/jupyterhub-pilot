@@ -112,7 +112,7 @@ Today `resource_limits` in `hub_settings.json` is one limit for every user, and 
 Today an upgrade is `pip install -U` + a restart (README → Upgrading). That only updates the Python code. When a release also changes the systemd unit, `hub.env`, `hub_settings.json` keys or the SQLite tables, the admin has to fix it by hand (0.4.0's metrics URL change needed a `sed` on every worker) or run `install-hub` / `install-worker` again.
 
 - [x] `sudo jupyterhub-pilot upgrade` (Hub and workers): pip upgrade, then the new code runs only the steps newer than `/etc/jupyterhub-pilot/version`; each step idempotent. Never touches keys, tokens, passwords, teams or homes.
-- [x] Steps so far: 0.4.0 worker metrics URL fix; 0.6.0 Hub `on_user_delete` + `idle_cull` defaults (existing values kept). `install-hub` / `install-worker` write the version file.
+- [x] Steps so far: 0.4.0 worker metrics URL fix; 0.6.0 Hub `on_user_delete` + `idle_cull` defaults (existing values kept); 0.6.0 worker `acl` + `git` packages. `install-hub` / `install-worker` write the version file.
 - [x] Hub checks workers' versions over SSH and lists those behind; asks before restarting the Hub (`--yes` to skip).
 - [x] `CHANGELOG.md`: per release, Hub / workers / both and whether a restart is needed.
 - [ ] Test on a cluster: install 0.5.1 from PyPI, Test a cluster steps, `upgrade` on Hub + workers, steps again; settings, teams and homes unchanged.
