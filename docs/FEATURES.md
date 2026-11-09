@@ -82,7 +82,7 @@ Everything a JupyterHub-Pilot cluster can do, by where it runs: the **Hub** (one
 What the cluster does **not** do today (most are ideas in [TODO.md](../TODO.md)):
 
 - **Backups:** notebooks live only on the worker's disk. Losing the worker's disk loses them.
-- **One team per user:** a user in several groups uses the first one.
+- **One team per user:** a user in several groups runs on the first one's worker (order not guaranteed), and moving a user to another team leaves their notebooks on the old worker. Planned: choose the team at start, or shared EFS homes ([TODO.md](../TODO.md#users-in-more-than-one-team)).
 - **Moving a team** to a new worker doesn't move its users' files.
 - **GPU or per-team worker sizes**, and stopping idle workers to save cost.
 - **Sharing a notebook** as a read-only page or dashboard; **real-time collaboration**.
