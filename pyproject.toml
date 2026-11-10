@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jupyterhub-pilot"
-version = "0.5.1"
+version = "0.7.0"
 description = "Agentic AI coding partner for JupyterHub and IPython"
 readme = {file = "PYPI.md", content-type = "text/markdown"}  # short page for PyPI; README.md is the full guide
 requires-python = ">=3.9"

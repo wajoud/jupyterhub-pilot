@@ -2,7 +2,9 @@
 
 Each release says where to upgrade (**Hub**, **workers**, or both) and whether a restart is needed. Upgrade with `sudo jupyterhub-pilot upgrade` on each machine (README → Upgrading).
 
-## 0.7.0 (unreleased)
+## 0.7.0 (2026-11-10)
+
+Includes everything listed under 0.6.0 below, which was never published on its own.
 
 **Upgrade: Hub and every worker** (workers only for the failed-runs list). Hub restart needed.
 
@@ -25,10 +27,10 @@ Workers:
 - `sudo jupyterhub-pilot mount-homes <efs-dns-name>` mounts the shared home filesystem.
 - A scheduled notebook now runs only on the worker where it was scheduled (matters with shared homes).
 
-## 0.6.0 (unreleased)
+## 0.6.0 (not published; part of 0.7.0)
 
 **Upgrade: Hub and every worker.** The Hub restart stops every running server; `upgrade` asks first.
-The first time, install 0.6.0 by hand, since 0.5.x has no `upgrade` command:
+The first time, install the new version by hand, since 0.5.x has no `upgrade` command:
 `sudo pip3 install --break-system-packages --ignore-installed -U "jupyterhub-pilot[hub]"` (`[worker,ai]` on workers), then `sudo jupyterhub-pilot upgrade --no-pip`.
 
 Hub:
