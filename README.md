@@ -423,7 +423,7 @@ At their next start the Hub creates the account again, on the shared home, and h
 - If the filesystem is not mounted on a worker, servers there are refused ("The shared home folder is not mounted") instead of silently using the local disk.
 - The mount point cannot be `/home`: that would hide the admin user's SSH keys and lock the Hub out.
 - `/data/<team>` and `/data/shared` stay on each worker's own disk.
-- A scheduled notebook runs only on the worker where `%schedule add` was typed.
+- A scheduled notebook runs only on the worker where `%schedule add` was typed. Jobs made before 0.7.0 do not know their worker: run `%schedule delete <name>` and `%schedule add` again, or they run on every worker.
 - EFS is slower than a local disk for many small files (`git`, `pip install --user`, virtual environments).
 
 ## Remove a worker server

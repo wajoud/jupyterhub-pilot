@@ -11,6 +11,9 @@ Hub:
 - **The Hub renews its own Vault token** daily; drop the `vault-renew` cron job. Add the `auth/token/renew-self` path to the policy (`docs/SECURITY.md` §4, step 2).
 - Stop Server returns as soon as the server has exited (was always 5 s).
 - A slow Vault no longer freezes the Hub while a server starts.
+- After a worker reboot a server no longer shows as running because another program got its process number.
+- If a user's Linux account cannot be created, the start page says so (was an SSH login error).
+- Shared homes: the user's own group gets the same ID as the user on every worker; team-folder links work for users not yet moved.
 
 - **Shared home folders (EFS):** `home_base` in `hub_settings.json`; every user gets the same Linux user ID on every worker (README → Shared home folders).
 - **Monitoring page redesigned:** what needs attention first, compact worker cards, light and dark, no external scripts.

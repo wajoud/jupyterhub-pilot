@@ -152,6 +152,8 @@ Today a user's **first** JupyterHub group decides their worker, team limit and `
   - [ ] Check on a cluster: a user in two teams sees the choice, lands on the chosen worker with that team's limit; an API/culler start with no choice uses the last one.
 - [x] **Shared homes (EFS):** `sudo jupyterhub-pilot mount-homes <efs-dns>` on every worker (mounts at `/efs/home`, not `/home`: that would hide the admin user's SSH keys), then `home_base` in `hub_settings.json`. The Hub gives each user one Linux UID for every worker (SQLite `user_uids`, from 20000) and refuses to start a server where the filesystem is not mounted. Scheduled jobs are pinned to their worker (`ConditionHost`). Tests; README → Shared home folders.
   - [ ] Check on a cluster: two workers + EFS; a two-team user sees the same files on both with the same owner; unmount on one worker → start refused with the 503 message; the migration steps for an existing user (`rsync`, `userdel`, start); `adduser --uid/--home` on Ubuntu and `useradd -u/-d` on AL2023.
+  - [ ] Check on a cluster: `id <user>` shows the same uid **and** gid on both workers (the `groupmod` line); a second user cannot read the first one's home on either worker; a user not yet moved still gets the `team`/`shared` links in `/home/<user>/notebook`.
+- [ ] Check on a cluster: reboot a worker with a server running → within 30 s the Hub shows it stopped and Start works (`poll()` checks the process is `jupyterhub-singleuser`).
   - [ ] Check on EFS: IPython history and Jupyter's SQLite files work on NFS (no "database is locked"); start time compared with a local home; `du` of a large home by the metrics agent.
 - [x] README → Move a user to another team.
   - [ ] Check the `tar | ssh` copy command there on a cluster.

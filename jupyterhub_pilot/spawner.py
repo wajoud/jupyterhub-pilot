@@ -312,7 +312,7 @@ class CustomSpawner(Spawner):
         """
         return server_info.get("ssh_user") or self._os_username()
 
-    def _provision_user_jit(self, server_info: Dict[str, Any]) -> None:
+    def _provision_user_jit(self, server_info: Dict[str, Any], team: Optional[str] = None) -> None:
         """
         Just-In-Time provision the OS user on the remote worker VM.
         Connects as 'admin_ssh_user' (e.g. 'ubuntu') using the Hub's SSH key,
@@ -348,8 +348,14 @@ class CustomSpawner(Spawner):
         )
         # A home that was copied to the shared disk before the account existed here: give it to the user.
         own_home = f'[ "$(stat -c %u {home})" = "$(id -u {u})" ] || sudo chown -R {u}: {home}' if shared else ""
+        # The user's own group gets the same number as the UID, so group owners match on every worker too.
+        same_gid = (
+            f'[ "$(id -g {u})" = {uid} ] || {{ sudo groupmod -g {uid} "$(id -gn {u})" && sudo chown -R {u}: {home}; }}'
+            if uid else ""
+        )
         admin_keys = shlex.quote(f"/home/{admin_user}/.ssh/authorized_keys")
-        team = self._team()
+        if team is None:  # start() passes it: user.groups is the Hub's DB, not for worker threads
+            team = self._team()
         # A shared ssh_user team works in that account's home, not /home/<user>: no links.
         folders = "" if server_info.get("ssh_user") else self._team_folder_script(target_user, team)
         script = f"""
@@ -359,6 +365,7 @@ class CustomSpawner(Spawner):
             # Amazon Linux's adduser is plain useradd and rejects the Debian flags.
             sudo adduser --allow-bad-names --disabled-password --gecos "" {add_opts}{u} \\
                 || sudo useradd -m -s /bin/bash {useradd_opts}{u}
+            {same_gid}
             {own_home}
             sudo loginctl enable-linger {u}
 
@@ -373,6 +380,7 @@ class CustomSpawner(Spawner):
         # by install_worker.sh; installing them here took minutes and blew
         # through JupyterHub's 60 s start_timeout.
         {folders}
+        id {u} >/dev/null
         """
 
         try:
@@ -384,9 +392,14 @@ class CustomSpawner(Spawner):
                     f"The shared home folder {base} is not mounted on your team's worker. "
                     "Ask an admin to run `sudo jupyterhub-pilot mount-homes` there.",
                 )
-            if exit_status != 0:
+            if exit_status != 0:  # the script's last line: does the account exist?
                 err = stderr.read().decode()
                 self.log.error(f"JIT Provisioning script failed with status {exit_status}:\n{err}")
+                raise web.HTTPError(
+                    500,
+                    f"Your Linux account '{target_user}' could not be created on your team's worker. "
+                    "Ask an admin to check the Hub log.",
+                )
             else:
                 self.log.info(f"JIT Provisioning succeeded for user {target_user}.")
         finally:
@@ -404,7 +417,7 @@ class CustomSpawner(Spawner):
                 self.log.warning("CustomSpawner: team '%s' is not a valid Linux group name; no team folder", team)
             team = ""
         u = shlex.quote(os_user)
-        nb = f"{_home_base()}/{os_user}/notebook"
+        nb = f"~{os_user}/notebook"  # os_user is regex-validated; the shell expands ~user
 
         def link(target: str, name: str) -> str:
             # Leave a real file or folder the user already has under that name alone.
@@ -604,7 +617,7 @@ class CustomSpawner(Spawner):
 
         # 3. All blocking SSH work off the event loop
         self.port = await asyncio.to_thread(
-            self._launch_remote, server_info, os_user, env, role
+            self._launch_remote, server_info, os_user, env, role, group
         )
 
         # 4. Persist session to SQLite
@@ -637,11 +650,12 @@ class CustomSpawner(Spawner):
         os_user: str,
         env: Dict[str, Any],
         role: str,
+        team: Optional[str] = None,
     ) -> int:
         """Blocking part of ``start()``; runs in a worker thread. Returns the port."""
         username: str = self.user.name
         try:
-            self._provision_user_jit(server_info)
+            self._provision_user_jit(server_info, team)
             ssh: paramiko.SSHClient = self._open_ssh(server_info)
         except Exception as exc:
             cls = type(exc).__name__
@@ -824,7 +838,7 @@ class CustomSpawner(Spawner):
         cleanup_cmd: str = (
             f"if [ -f {pid_file} ]; then "
             f"  PID=$(cat {pid_file}); "
-            f"  if ps -p $PID > /dev/null 2>&1; then "
+            f"  if ps -p $PID -o args= 2>/dev/null | grep -q jupyterhub-singleuser; then "
             f"    kill -15 $PID; "
             # up to 5 s, but return as soon as it has exited
             f"    for i in 1 2 3 4 5 6 7 8 9 10; do ps -p $PID > /dev/null 2>&1 || break; sleep 0.5; done; "
@@ -877,7 +891,8 @@ class CustomSpawner(Spawner):
             status: str = await asyncio.to_thread(
                 self._run_remote,
                 server_info,
-                f"ps -p $(cat {_PID_FILE.format(self._os_username())} 2>/dev/null) > /dev/null 2>&1 "
+                f"ps -p $(cat {_PID_FILE.format(self._os_username())} 2>/dev/null) -o args= 2>/dev/null "
+                f"| grep -q jupyterhub-singleuser "
                 f"&& echo 0 || echo 1",
             )
         except Exception as exc:  # noqa: BLE001
@@ -910,7 +925,7 @@ class CustomSpawner(Spawner):
         self.log.info("CustomSpawner.poll: process stopped for '%s'", username)
         return 0
 
-    def _delete_linux_user(self) -> None:
+    def _delete_linux_user(self, teams: Optional[List[str]] = None) -> None:
         """Blocking part of ``delete_forever()``; runs in a worker thread."""
         mode = hub_settings.get("on_user_delete", "archive")
         if mode == "keep":
@@ -918,7 +933,8 @@ class CustomSpawner(Spawner):
         if mode not in ("archive", "delete"):
             self.log.error("CustomSpawner: on_user_delete=%r is not archive/delete/keep; keeping the account", mode)
             return
-        teams = self._teams()
+        if teams is None:
+            teams = self._teams()
         if not teams:
             self.log.info("CustomSpawner: '%s' has no team; no worker account to delete", self.user.name)
         for team in teams:  # a user in several teams can have an account on each worker
@@ -974,7 +990,7 @@ class CustomSpawner(Spawner):
         """Hub user deleted: remove their Linux account on the team's worker (``on_user_delete``)."""
         try:
             _store.delete_user_limits(self.user.name)
-            await asyncio.to_thread(self._delete_linux_user)
+            await asyncio.to_thread(self._delete_linux_user, self._teams())  # groups read here, on the loop
         except Exception as exc:  # noqa: BLE001
             self.log.error("CustomSpawner: could not delete Linux user for '%s': %s", self.user.name, exc)
 

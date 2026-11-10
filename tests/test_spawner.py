@@ -514,9 +514,9 @@ def test_jit_sets_up_team_and_shared_folders():
     assert "sudo groupadd -f team_alpha" in script
     assert "sudo usermod -aG team_alpha alice" in script
     assert "sudo chmod 2770 /data/team_alpha" in script
-    assert "ln -sfn /data/team_alpha /home/alice/notebook/team" in script
-    assert "ln -sfn /data/shared /home/alice/notebook/shared" in script
-    assert "[ ! -L /home/alice/notebook/team ] ||" in script  # a real 'team' folder is left alone
+    assert "ln -sfn /data/team_alpha ~alice/notebook/team" in script
+    assert "ln -sfn /data/shared ~alice/notebook/shared" in script
+    assert "[ ! -L ~alice/notebook/team ] ||" in script  # a real 'team' folder is left alone
     # Team setup runs for existing users too, so it must come after the "create user" block.
     assert script.index("fi\n") < script.index("groupadd")
 
@@ -633,7 +633,9 @@ def test_shared_home_creates_the_account_there_with_the_hubs_uid(monkeypatch):
     assert f"--home /efs/home/alice --uid {uid} alice" in script
     assert f"useradd -m -s /bin/bash -d /efs/home/alice -u {uid} alice" in script
     assert script.index("mountpoint -q /efs/home ||") < script.index("adduser")  # checked before anything is created
-    assert "ln -sfn /data/team_alpha /efs/home/alice/notebook/team" in script
+    # links go to the account's real home: a user not yet moved still lives in /home
+    assert "ln -sfn /data/team_alpha ~alice/notebook/team" in script
+    assert f'[ "$(id -g alice)" = {uid} ] || {{ sudo groupmod -g {uid}' in script  # same group ID on every worker
     assert "chown -R alice: /efs/home/alice" in script
 
 
@@ -661,3 +663,33 @@ def test_home_base_that_is_not_a_plain_path_is_refused(monkeypatch, bad):
     monkeypatch.setattr(spawner, "hub_settings", {"home_base": bad})
     with pytest.raises(RuntimeError):
         spawner._home_base()
+
+
+def test_jit_that_leaves_no_account_is_a_clear_error(monkeypatch):
+    inst = _shared_spawner(monkeypatch)
+    ssh = _jit_ssh()
+    ssh.exec_command.return_value[1].channel.recv_exit_status.return_value = 1
+    with patch.object(spawner.paramiko, "SSHClient", return_value=ssh):
+        with pytest.raises(spawner.web.HTTPError):
+            inst._provision_user_jit(JIT_SERVER)
+    assert ssh.exec_command.call_args.args[0].rstrip().endswith("id alice >/dev/null")
+
+
+@pytest.mark.anyio
+async def test_poll_and_stop_ignore_a_pid_reused_by_another_program(mock_spawner_instance):
+    inst = mock_spawner_instance
+    spawner._store.set_session("test_user", vm_ip="192.168.1.100", status="running", group_name="team_alpha")
+    inst._run_remote = MagicMock(return_value="1")
+    assert await inst.poll() == 0
+    assert "-o args= 2>/dev/null | grep -q jupyterhub-singleuser" in inst._run_remote.call_args.args[1]
+    spawner._store.set_session("test_user", vm_ip="192.168.1.100", status="running", group_name="team_alpha")
+    await inst.stop()
+    assert "if ps -p $PID -o args= 2>/dev/null | grep -q jupyterhub-singleuser; then" in inst._run_remote.call_args.args[1]
+
+
+@pytest.mark.anyio
+async def test_teams_are_read_before_the_worker_thread(mock_spawner_instance):
+    inst = mock_spawner_instance
+    inst._delete_linux_user = MagicMock()
+    await inst.delete_forever()
+    inst._delete_linux_user.assert_called_once_with(["team_alpha"])
