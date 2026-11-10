@@ -373,7 +373,7 @@ class TestSpawnerStop:
         cmd = mock_ssh.exec_command.call_args[0][0]
         assert "kill -15" in cmd, "SIGTERM not in stop command"
         assert "kill -9" in cmd, "SIGKILL not in stop command"
-        assert "sleep 5" in cmd, "5-second grace period not in stop command"
+        assert "sleep 0.5" in cmd and "|| break" in cmd, "grace period (leave early once exited) not in stop command"
 
     @pytest.mark.anyio
     async def test_stop_removes_session_from_store(self, mock_spawner, store):

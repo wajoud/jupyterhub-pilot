@@ -43,11 +43,10 @@ Released in 0.4.0. Verified on 2026-11-08 in ap-south-1 (Ubuntu 26.04 Arm, 1 Hub
 
 ## Test Amazon Linux 2023 support end to end
 
-Amazon Linux 2023 (default user `ec2-user`) now has its own install scripts next to the Ubuntu ones:
-`scripts/install_hub_amazon_linux.sh` and `scripts/install_worker_amazon_linux.sh`. The spawner falls back to
+Amazon Linux 2023 (default user `ec2-user`) is handled by the same scripts as Ubuntu (`install_hub.sh`, `install_worker.sh` pick `apt` or `dnf`). The spawner falls back to
 `useradd` when Debian's `adduser` flags are rejected. None of this has run on a real AL2023 instance yet.
 
-- [ ] Run both scripts on fresh AL2023 instances (run `sudo dnf install -y git` first so you can clone).
+- [ ] Run `install-hub` and `install-worker` on fresh AL2023 instances.
 - [ ] Check that `dnf install nodejs npm` provides `npm`; if not, use `nodejs-npm`.
 - [ ] Check that pip on the system Python 3.9 resolves working versions of JupyterHub 5, oauthenticator, notebook and the `[ai]` extra. If not, switch the scripts to `python3.11`.
 - [ ] Check that the Vault RPM repo installs, or that the script skips it cleanly.
@@ -105,7 +104,8 @@ Today `resource_limits` in `hub_settings.json` is one limit for every user, and 
 - [x] README → Test a cluster step 6 (Vault).
 - [ ] Check on the Hub whether `vault` got installed on Ubuntu 26.04 (`vault version`); if `install-hub` printed "Vault not installed", say so in the docs.
 - [ ] Run step 6 on a cluster.
-- [ ] Later: have the Hub renew its own token (`/v1/auth/token/renew-self`) so the cron job is not needed.
+- [x] The Hub renews its own token (`/v1/auth/token/renew-self`, at start and daily); no cron job. The policy needs the `auth/token/renew-self` path (the old cron job needed it too and would have got a `403`).
+  - [ ] Check on a cluster: Hub log has no `token renewal refused`; `vault token lookup` shows the TTL back at 768h after a Hub restart.
 
 ## Upgrades: update only what changed, keep everything working
 
@@ -129,7 +129,9 @@ Users want to pick an `.ipynb` and have it run on a schedule (every night, every
 - [x] Survives restarts (linger, `Persistent=true` catches up missed runs). Delete the user → account and timers gone.
 - [x] Docs: README → Scheduled notebooks; `docs/SECURITY.md` (env file). Tests (units mocked).
 - [ ] Check on a cluster: `%schedule add "*:0/2" test.ipynb` (every 2 minutes), result appears, `-FAILED` on a raising cell, a 2 GB cell is killed under a `1G` limit, job runs again after a worker reboot, `systemd-analyze` exists on Ubuntu 26.04 and AL2023.
-- [ ] Later: failed runs on `/hub/monitoring`; a Schedule button in the Notebook UI.
+- [x] Failed runs on `/hub/monitoring` (each run writes `~/.config/jupyterhub-pilot/jobs/<name>.last`; the metrics agent reports the failed ones). Not shown to users of a shared `ssh_user` team (admins see them).
+  - [ ] Check on a cluster: a failing job appears under its worker, and goes after a good run.
+- [ ] Later: a Schedule button in the Notebook UI (needs a JupyterLab extension in TypeScript, with its own build and release; `%schedule` covers it until someone asks).
 
 ## Terminal access and JupyterLab
 
@@ -146,10 +148,13 @@ Notebook 7 is built on JupyterLab and pulls in `jupyterlab` and the terminal ext
 
 Today a user's **first** JupyterHub group decides their worker, team limit and `team/` folder, and JupyterHub doesn't guarantee the group order. So a user in two teams can't choose, and moving a user to another team leaves their notebooks on the old worker's disk (`/home/<user>/notebook`). README says "keep each user in one team group".
 
-- [ ] Decide whether anyone needs more than one team. If yes:
-- [ ] **Choose the team at start:** for a user in several team groups, a "Which team?" choice on the spawn page (`options_form`); the choice picks the worker, limit and `team/` folder. One-team users see no change.
-- [ ] **Shared homes (EFS):** mount the same `/home` on every worker so switching teams keeps all files (also covers moving a team to a new worker, and backups; see Notebook backups below).
-- [ ] Until then: README "Move a user to another team" steps (remove from the old group, copy `/home/<user>/notebook` to the new worker, restart their server).
+- [x] **Choose the team at start:** for a user in several team groups, a "Which team?" choice on the spawn page; the choice picks the worker, limit and `team/` folder. One-team users see no change. Groups without a worker are ignored; the default is the first team by name (group order no longer matters). Tests.
+  - [ ] Check on a cluster: a user in two teams sees the choice, lands on the chosen worker with that team's limit; an API/culler start with no choice uses the last one.
+- [x] **Shared homes (EFS):** `sudo jupyterhub-pilot mount-homes <efs-dns>` on every worker (mounts at `/efs/home`, not `/home`: that would hide the admin user's SSH keys), then `home_base` in `hub_settings.json`. The Hub gives each user one Linux UID for every worker (SQLite `user_uids`, from 20000) and refuses to start a server where the filesystem is not mounted. Scheduled jobs are pinned to their worker (`ConditionHost`). Tests; README → Shared home folders.
+  - [ ] Check on a cluster: two workers + EFS; a two-team user sees the same files on both with the same owner; unmount on one worker → start refused with the 503 message; the migration steps for an existing user (`rsync`, `userdel`, start); `adduser --uid/--home` on Ubuntu and `useradd -u/-d` on AL2023.
+  - [ ] Check on EFS: IPython history and Jupyter's SQLite files work on NFS (no "database is locked"); start time compared with a local home; `du` of a large home by the metrics agent.
+- [x] README → Move a user to another team.
+  - [ ] Check the `tar | ssh` copy command there on a cluster.
 
 ## Ideas for a better analysis / data science setup
 
@@ -165,7 +170,7 @@ Ranked by value for effort. Each needs a decision before it becomes real work.
   - [ ] Check worker disk after install (~600 MB more) and that `%sql duckdb://` works.
 
 ### Next (protect work, reach data)
-- [ ] **Notebook backups:** home folders live only on the worker disk; nightly sync to S3 or EBS snapshots, or EFS homes (also makes moving a team to a new worker free).
+- [ ] **Notebook backups:** with shared homes (above), turn on AWS Backup for the EFS filesystem (console, no code). Without EFS: nightly sync to S3 or EBS snapshots, still to do.
 - [ ] **Data connections from Vault:** turn a user's Vault secrets into ready `%sql` / S3 connections, no passwords in notebooks (after the Vault section above).
 - [x] **Git in the notebook:** `jupyterlab-git` + `nbdime` in the worker extra, `git` in `install-worker`; README → Git.
   - [ ] Check on a cluster: the Git tab in `/lab` (and whether Notebook 7's `/tree` shows a Git menu); `nbdiff` works.
@@ -176,4 +181,6 @@ Ranked by value for effort. Each needs a decision before it becomes real work.
 - [x] **Data-aware AI magics:** the context lists pandas/polars DataFrames with shape and column dtypes (first 30); new `%explain [question]`. Docs + tests.
   - [ ] Check with a real model on a cluster that `%do` uses the real column names.
 - [ ] **Real-time collaboration:** `jupyter-collaboration` (needs JupyterLab, see the Terminal/JupyterLab section).
-- [ ] **Usage report per team:** monthly CPU/RAM per team from the monitoring data.
+- [x] **Usage history per user:** 5-minute CPU/memory points kept 15 days in SQLite (`user_usage`), graphed on `/hub/monitoring` (24 h / 7 d / 15 d); Prometheus endpoint `/hub/monitoring/metrics` for Grafana. Monitoring page redesigned (attention list, compact cards, light/dark, no CDN script). Tests; `docs/MONITORING.md`.
+  - [ ] Check on a cluster: points appear after 5 minutes, a user sees only their own history, the page on a phone, a Prometheus scrape with the token.
+- [ ] **Usage report per team:** monthly CPU/RAM per team. The data is now in `user_usage` (15 days); a monthly report needs a longer retention or a monthly roll-up.

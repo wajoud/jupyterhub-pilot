@@ -22,6 +22,9 @@
         "cpu_quota": "50%"
     },
 
+    "_comment_home_base": "Folder that holds the users' homes on every worker. /home = each worker's own disk. For shared homes (EFS), mount it on every worker with `jupyterhub-pilot mount-homes` and set this to the mount point, e.g. /efs/home.",
+    "home_base": "/home",
+
     "_comment_user_delete": "Deleting a Hub user removes their Linux account on the team's worker. archive = move /home/<user> to /home/.deleted, delete = remove it, keep = leave the account.",
     "on_user_delete": "archive",
 

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import glob
 import json
 import logging
 import os
@@ -137,6 +138,34 @@ def _collect_users(cpu_count: int) -> List[Dict[str, Any]]:
     return sorted(rows, key=lambda r: r["mem_mb"], reverse=True)
 
 
+_LAST_RUN_GLOB = ".config/jupyterhub-pilot/jobs/*.last"  # in each home; written by schedule.run()
+
+
+def _failed_jobs() -> List[Dict[str, Any]]:
+    """Scheduled notebooks (%schedule) whose last run failed: [{user, job, at}]."""
+    out: List[Dict[str, Any]] = []
+    # Homes of this worker's accounts (they can be on a shared disk, outside /home).
+    paths = [
+        (p.pw_name, path)
+        for p in pwd.getpwall()
+        if p.pw_uid >= 1000 and p.pw_dir.startswith("/")
+        for path in glob.glob(os.path.join(glob.escape(p.pw_dir), _LAST_RUN_GLOB))
+    ]
+    for user, path in paths:
+        try:
+            # The file is the user's and the agent is root: no symlinks, never block on a FIFO.
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            try:
+                state, at = os.read(fd, 64).decode().split()
+            finally:
+                os.close(fd)
+            if state == "failed":
+                out.append({"user": user, "job": os.path.basename(path)[:-5], "at": int(at)})
+        except (OSError, ValueError):
+            continue
+    return out
+
+
 def _home_size(path: str) -> Optional[int]:
     """Bytes used under *path* (same filesystem only); None if du fails or is slow."""
     try:
@@ -228,6 +257,7 @@ def _collect_metrics(prev_net: Dict[str, int], elapsed: float) -> Dict[str, Any]
     return {
         "uptime_s": int(time.time() - psutil.boot_time()),
         "users": _collect_users(cpu_count),
+        "failed_jobs": _failed_jobs(),
         "hostname": socket.gethostname(),
         "ip": socket.gethostbyname(socket.gethostname()),
         "timestamp": time.time(),

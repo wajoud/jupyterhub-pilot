@@ -385,8 +385,11 @@ def test_jit_provisioning_script_creates_dotted_user_without_pip():
     with patch.object(spawner.paramiko, "SSHClient", return_value=ssh):
         inst._provision_user_jit(JIT_SERVER)
     script = ssh.exec_command.call_args.args[0]
-    assert 'adduser --allow-bad-names --disabled-password --gecos "" alice.smith' in script
-    assert "|| sudo useradd -m -s /bin/bash alice.smith" in script  # Amazon Linux fallback
+    uid = spawner._store.get_or_create_uid("alice.smith")  # the Hub picks the UID, the same on every worker
+    assert uid >= 20000
+    assert f'adduser --allow-bad-names --disabled-password --gecos "" --uid {uid} alice.smith' in script
+    assert f"|| sudo useradd -m -s /bin/bash -u {uid} alice.smith" in script  # Amazon Linux fallback
+    assert "mountpoint" not in script  # local homes: no shared-disk check
     assert "pip3 install" not in script  # packages are installed once per worker
     ssh.close.assert_called_once()
 
@@ -542,3 +545,119 @@ async def test_terminal_off_for_one_user(mock_spawner_instance):
             patch.dict(spawner.hub_settings, {"hub_api_url": "http://hub:8081/hub/api"}):
         await mock_spawner_instance.start()
     assert "--ServerApp.terminals_enabled=False" in stdin.write.call_args[0][0]
+
+
+# ── Users in more than one team ───────────────────────────────────────────────
+
+
+def _team_spawner(groups, mapped=("team_alpha", "team_beta"), chosen=None):
+    inst = CustomSpawner()
+    inst.user.groups = []
+    for name in groups:
+        g = MagicMock()
+        g.name = name
+        inst.user.groups.append(g)
+
+    def info(group):
+        if group not in mapped:
+            raise RuntimeError("not mapped")
+        return {**JIT_SERVER, "server_ip": f"ip-of-{group}"}
+
+    inst._get_server_info = MagicMock(side_effect=info)
+    if chosen is not None:
+        inst.user_options = {"team": chosen}
+    return inst
+
+
+@pytest.mark.anyio
+async def test_one_team_user_gets_no_form_and_no_mapping_lookups():
+    inst = _team_spawner(["team_beta"])
+    assert await inst.get_options_form() == ""
+    assert inst._team() == "team_beta"
+    inst._get_server_info.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_two_team_user_chooses_and_non_team_groups_are_ignored():
+    # JupyterHub's group order is not guaranteed: the default is the first by name.
+    inst = _team_spawner(["team_beta", "a_non_team_group", "team_alpha"])
+    assert inst._teams() == ["team_alpha", "team_beta"]
+    assert inst._team() == "team_alpha"
+    form = await inst.get_options_form()
+    assert 'value="team_alpha" selected' in form and 'value="team_beta"' in form
+    assert "a_non_team_group" not in form
+
+    assert inst.options_from_form({"team": ["team_beta"]}) == {"team": "team_beta"}
+    assert _team_spawner(["team_beta", "team_alpha"], chosen="team_beta")._team() == "team_beta"
+
+
+def test_a_team_the_user_is_not_in_cannot_be_chosen():
+    inst = _team_spawner(["team_alpha", "team_beta"], mapped=("team_alpha", "team_beta", "team_gamma"), chosen="team_gamma")
+    assert inst._team() == "team_alpha"
+
+
+@pytest.mark.anyio
+async def test_delete_forever_removes_the_account_on_every_teams_worker(monkeypatch):
+    monkeypatch.setattr(spawner, "hub_settings", {})
+    inst = _team_spawner(["team_alpha", "team_beta"])
+    inst.user.name = "alice"
+    ssh = _jit_ssh()
+    with patch.object(spawner.paramiko, "SSHClient", return_value=ssh):
+        await inst.delete_forever()
+    assert [c.args[0] for c in ssh.connect.call_args_list] == ["ip-of-team_alpha", "ip-of-team_beta"]
+
+
+# ── Shared homes (home_base on EFS/NFS) ───────────────────────────────────────
+
+
+def _shared_spawner(monkeypatch, name="alice", base="/efs/home"):
+    monkeypatch.setattr(spawner, "hub_settings", {"home_base": base})
+    inst = CustomSpawner()
+    inst.user.name = name
+    group = MagicMock()
+    group.name = "team_alpha"
+    inst.user.groups = [group]
+    inst._get_server_info = MagicMock(return_value=JIT_SERVER)
+    return inst
+
+
+def test_shared_home_creates_the_account_there_with_the_hubs_uid(monkeypatch):
+    inst = _shared_spawner(monkeypatch)
+    ssh = _jit_ssh()
+    with patch.object(spawner.paramiko, "SSHClient", return_value=ssh):
+        inst._provision_user_jit(JIT_SERVER)
+    script = ssh.exec_command.call_args.args[0]
+    uid = spawner._store.get_or_create_uid("alice")
+    assert uid == spawner._store.get_or_create_uid("alice")  # stable
+    assert uid != spawner._store.get_or_create_uid("bob")
+    assert f"--home /efs/home/alice --uid {uid} alice" in script
+    assert f"useradd -m -s /bin/bash -d /efs/home/alice -u {uid} alice" in script
+    assert script.index("mountpoint -q /efs/home ||") < script.index("adduser")  # checked before anything is created
+    assert "ln -sfn /data/team_alpha /efs/home/alice/notebook/team" in script
+    assert "chown -R alice: /efs/home/alice" in script
+
+
+def test_start_is_refused_when_the_shared_home_is_not_mounted(monkeypatch):
+    inst = _shared_spawner(monkeypatch)
+    ssh = _jit_ssh()
+    ssh.exec_command.return_value[1].channel.recv_exit_status.return_value = spawner._EXIT_NOT_MOUNTED
+    with patch.object(spawner.paramiko, "SSHClient", return_value=ssh), pytest.raises(spawner.web.HTTPError) as err:
+        inst._provision_user_jit(JIT_SERVER)
+    assert err.value.status_code == 503
+    ssh.close.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_delete_archives_inside_the_shared_home(monkeypatch):
+    inst = _shared_spawner(monkeypatch)
+    ssh = _jit_ssh()
+    with patch.object(spawner.paramiko, "SSHClient", return_value=ssh):
+        await inst.delete_forever()
+    assert "sudo mv /efs/home/alice /efs/home/.deleted/alice-" in ssh.exec_command.call_args.args[0]
+
+
+@pytest.mark.parametrize("bad", ["efs/home", "/efs/home; rm -rf /", "/efs/$(id)"])
+def test_home_base_that_is_not_a_plain_path_is_refused(monkeypatch, bad):
+    monkeypatch.setattr(spawner, "hub_settings", {"home_base": bad})
+    with pytest.raises(RuntimeError):
+        spawner._home_base()

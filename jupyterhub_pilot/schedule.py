@@ -22,6 +22,7 @@ import glob
 import os
 import re
 import shlex
+import socket
 import subprocess
 import sys
 import time
@@ -79,7 +80,9 @@ def secret_env() -> str:
 def render_units(name: str, notebook: str, calendar: str, keep: int, limits: List[str]) -> tuple:
     service = (
         "[Unit]\n"
-        f"Description=jupyterhub-pilot scheduled notebook {name}\n\n"
+        f"Description=jupyterhub-pilot scheduled notebook {name}\n"
+        # With a shared home every worker sees this unit: run only where it was scheduled.
+        f"ConditionHost={socket.gethostname()}\n\n"
         "[Service]\n"
         "Type=oneshot\n"
         f"EnvironmentFile=-{_q(os.path.join(ENV_DIR, name + '.env'))}\n"
@@ -170,10 +173,11 @@ def control(action: str, name: str) -> str:
                 os.remove(os.path.join(UNIT_DIR, path))
             except FileNotFoundError:
                 pass
-        try:
-            os.remove(os.path.join(ENV_DIR, name + ".env"))
-        except FileNotFoundError:
-            pass
+        for ext in (".env", ".last"):
+            try:
+                os.remove(os.path.join(ENV_DIR, name + ext))
+            except FileNotFoundError:
+                pass
         _systemctl("daemon-reload")
         msg = f"🗑 '{name}' deleted (past results are kept)."
     return f"❌ systemctl failed: {r.stderr.strip()}" if r.returncode else msg
@@ -227,6 +231,10 @@ def run(notebook: str, keep: int) -> int:
             os.replace(out, out[: -len(".ipynb")] + "-FAILED.ipynb")
         status = 1
     prune(notebook, keep)
+    # Last result, read by the worker's metrics agent: failed runs show on /hub/monitoring.
+    os.makedirs(ENV_DIR, mode=0o700, exist_ok=True)
+    with open(os.path.join(ENV_DIR, job_name(notebook) + ".last"), "w") as f:
+        f.write(f"{'failed' if status else 'ok'} {int(time.time())}\n")
     return status
 
 

@@ -40,13 +40,14 @@ Spawn preparation
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import os
 import re
 import shlex
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import paramiko
 from tornado import web
@@ -143,6 +144,18 @@ def _db_available() -> bool:
 # reported stopped. Shorter outages are treated as blips and keep the server.
 _UNREACHABLE_GRACE: float = 300.0
 
+# JIT script exit code: home_base is set but is not a mounted filesystem on the worker.
+_EXIT_NOT_MOUNTED = 78
+
+
+def _home_base() -> str:
+    """Folder that holds the users' homes on every worker (``home_base``; a shared mount such as EFS)."""
+    base = str(hub_settings.get("home_base") or "/home").rstrip("/")
+    if not re.fullmatch(r"(/[A-Za-z0-9_.-]+)+", base):  # goes into remote shell scripts
+        raise RuntimeError(f"home_base {base!r} in hub_settings.json must be an absolute path like /efs/home")
+    return base
+
+
 _PID_FILE = "~/.jupyterhub-pilot-{}.pid"
 _LOG_FILE = "~/.jupyterhub-pilot-{}.log"
 
@@ -232,6 +245,48 @@ class CustomSpawner(Spawner):
             )
         return fallback[group]
 
+    def _teams(self) -> List[str]:
+        """The user's team groups, sorted (JupyterHub does not guarantee group order).
+
+        With several groups, only those mapped to a worker count, so a non-team
+        group never becomes the team by accident.
+        """
+        names = sorted(g.name for g in self.user.groups)
+        if len(names) < 2:
+            return names
+        mapped = []
+        for name in names:
+            try:
+                self._get_server_info(name)
+                mapped.append(name)
+            except RuntimeError:
+                pass
+        return mapped or names
+
+    def _team(self) -> str:
+        """The team this server runs for: the start-page choice if still valid, else the first; "" if none."""
+        teams = self._teams()
+        chosen = (getattr(self, "user_options", None) or {}).get("team")
+        return chosen if chosen in teams else (teams[0] if teams else "")
+
+    async def get_options_form(self) -> str:
+        """"Which team?" on the start page, only for users in more than one team."""
+        teams = self._teams()
+        if len(teams) < 2:
+            return ""
+        current = self._team()
+        options = "".join(
+            f'<option value="{html.escape(t)}"{" selected" if t == current else ""}>{html.escape(t)}</option>'
+            for t in teams
+        )
+        return (
+            '<label for="team">Which team? It decides the worker, the RAM/CPU limit and the team folder.</label>'
+            f'<select id="team" name="team" class="form-select">{options}</select>'
+        )
+
+    def options_from_form(self, formdata: Dict[str, List[str]]) -> Dict[str, str]:
+        return {"team": (formdata.get("team") or [""])[0]}  # validated against the user's groups in _team()
+
     def _os_username(self) -> str:
         """
         Return the Linux login name for this JupyterHub user.
@@ -274,17 +329,37 @@ class CustomSpawner(Spawner):
             return
 
         u = shlex.quote(target_user)
-        home = shlex.quote(f"/home/{target_user}")
+        base = _home_base()
+        home = shlex.quote(f"{base}/{target_user}")
+        shared = base != "/home"
+        # Same UID on every worker, so files on a shared home have one owner. No DB: the worker picks.
+        try:
+            uid: Optional[int] = _store.get_or_create_uid(target_user)
+        except Exception as exc:  # noqa: BLE001
+            if shared:
+                raise RuntimeError(f"Cannot allocate a Linux UID for '{target_user}' (needed for shared homes): {exc}") from exc
+            uid = None
+        add_opts = (f"--home {home} " if shared else "") + (f"--uid {uid} " if uid else "")
+        useradd_opts = (f"-d {home} " if shared else "") + (f"-u {uid} " if uid else "")
+        # Fail closed: without the mount, users would silently work on the worker's own disk.
+        mount_check = (
+            f'mountpoint -q {base} || {{ echo "{base} is not mounted on this worker" >&2; exit {_EXIT_NOT_MOUNTED}; }}'
+            if shared else ""
+        )
+        # A home that was copied to the shared disk before the account existed here: give it to the user.
+        own_home = f'[ "$(stat -c %u {home})" = "$(id -u {u})" ] || sudo chown -R {u}: {home}' if shared else ""
         admin_keys = shlex.quote(f"/home/{admin_user}/.ssh/authorized_keys")
-        team = self.user.groups[0].name if self.user.groups else ""
+        team = self._team()
         # A shared ssh_user team works in that account's home, not /home/<user>: no links.
         folders = "" if server_info.get("ssh_user") else self._team_folder_script(target_user, team)
         script = f"""
+        {mount_check}
         if ! id {u} &>/dev/null; then
             echo "Creating user {target_user}..."
             # Amazon Linux's adduser is plain useradd and rejects the Debian flags.
-            sudo adduser --allow-bad-names --disabled-password --gecos "" {u} \\
-                || sudo useradd -m -s /bin/bash {u}
+            sudo adduser --allow-bad-names --disabled-password --gecos "" {add_opts}{u} \\
+                || sudo useradd -m -s /bin/bash {useradd_opts}{u}
+            {own_home}
             sudo loginctl enable-linger {u}
 
             sudo -u {u} mkdir -p {home}/notebook
@@ -303,6 +378,12 @@ class CustomSpawner(Spawner):
         try:
             _, stdout, stderr = ssh.exec_command(script)
             exit_status = stdout.channel.recv_exit_status()
+            if exit_status == _EXIT_NOT_MOUNTED:
+                raise web.HTTPError(
+                    503,
+                    f"The shared home folder {base} is not mounted on your team's worker. "
+                    "Ask an admin to run `sudo jupyterhub-pilot mount-homes` there.",
+                )
             if exit_status != 0:
                 err = stderr.read().decode()
                 self.log.error(f"JIT Provisioning script failed with status {exit_status}:\n{err}")
@@ -323,7 +404,7 @@ class CustomSpawner(Spawner):
                 self.log.warning("CustomSpawner: team '%s' is not a valid Linux group name; no team folder", team)
             team = ""
         u = shlex.quote(os_user)
-        nb = f"/home/{os_user}/notebook"
+        nb = f"{_home_base()}/{os_user}/notebook"
 
         def link(target: str, name: str) -> str:
             # Leave a real file or folder the user already has under that name alone.
@@ -423,10 +504,9 @@ class CustomSpawner(Spawner):
         username: str = self.user.name
 
         # ── Task 2: cgroup limits for start(): user → team → hub_settings default ──
-        team_props = None
-        if self.user.groups:  # start() uses the first group as the team
-            props = getattr(self.user.groups[0], "properties", None)
-            team_props = props if isinstance(props, dict) else None
+        team = self._team()  # the same team start() uses
+        props = next((getattr(g, "properties", None) for g in self.user.groups if g.name == team), None)
+        team_props = props if isinstance(props, dict) else None
         user_row = _store.get_user_limits(username)
         # Terminal off for this user (Limits page); the Hub-wide switch is checked in _launch_remote.
         self._terminals_off: bool = bool((user_row or {}).get("terminals_off"))
@@ -453,7 +533,8 @@ class CustomSpawner(Spawner):
                 "vault_secret_path", "secret/jupyterhub-pilot"
             )
             vault = VaultClient(secret_base_path=secret_path)
-            secrets = vault.get_user_secrets(username)
+            # In a thread: a slow or dead Vault must not freeze the Hub for every user.
+            secrets = await asyncio.to_thread(vault.get_user_secrets, username)
             if secrets:
                 # Merge into self.environment; get_env() picks this up at launch
                 self.environment.update(secrets)
@@ -497,8 +578,8 @@ class CustomSpawner(Spawner):
 
         # 1. Resolve group and VM.  JupyterHub's own scopes already stop users
         # from starting someone else's server.
-        user_groups = [g.name for g in self.user.groups]
-        if not user_groups:
+        group: str = self._team()
+        if not group:
             # HTTPError passes through to the page as a readable message, not a bare 500.
             raise web.HTTPError(
                 403,
@@ -506,7 +587,6 @@ class CustomSpawner(Spawner):
                 "Ask an admin to add you to a team group (Admin → Groups), then start your server.",
             )
 
-        group: str = user_groups[0]
         server_info: Dict[str, Any] = self._get_server_info(group)
         self.ip = server_info["server_ip"]
         os_user: str = self._os_username()
@@ -746,7 +826,8 @@ class CustomSpawner(Spawner):
             f"  PID=$(cat {pid_file}); "
             f"  if ps -p $PID > /dev/null 2>&1; then "
             f"    kill -15 $PID; "
-            f"    sleep 5; "
+            # up to 5 s, but return as soon as it has exited
+            f"    for i in 1 2 3 4 5 6 7 8 9 10; do ps -p $PID > /dev/null 2>&1 || break; sleep 0.5; done; "
             f"    kill -9 $PID 2>/dev/null || true; "
             f"  fi; "
             f"  rm -f {pid_file}; "
@@ -837,21 +918,27 @@ class CustomSpawner(Spawner):
         if mode not in ("archive", "delete"):
             self.log.error("CustomSpawner: on_user_delete=%r is not archive/delete/keep; keeping the account", mode)
             return
-        groups = [g.name for g in self.user.groups]
-        if not groups:
+        teams = self._teams()
+        if not teams:
             self.log.info("CustomSpawner: '%s' has no team; no worker account to delete", self.user.name)
-            return
-        server_info = self._get_server_info(groups[0])
+        for team in teams:  # a user in several teams can have an account on each worker
+            try:
+                self._delete_linux_user_on(self._get_server_info(team), mode)
+            except Exception as exc:  # noqa: BLE001  (one bad worker must not skip the others)
+                self.log.error("CustomSpawner: deleting '%s' on %s's worker failed: %s", self.user.name, team, exc)
+
+    def _delete_linux_user_on(self, server_info: Dict[str, Any], mode: str) -> None:
         if server_info.get("ssh_user") or not server_info.get("admin_ssh_user"):
             # A shared ssh_user account belongs to the whole team: never delete it.
             return
         os_user = self._os_username()  # validated: safe in the shell script
         u = shlex.quote(os_user)
+        base = _home_base()
         if mode == "archive":
-            # Notebooks are kept in /home/.deleted (root only); sudo sh -c 'rm -rf /home/.deleted/<user>-*' frees the disk.
+            # Notebooks are kept in <home_base>/.deleted (root only); sudo sh -c 'rm -rf /home/.deleted/<user>-*' frees the disk.
             remove = (
-                f"sudo mkdir -p /home/.deleted && sudo chmod 700 /home/.deleted\n"
-                f"[ -d /home/{os_user} ] && sudo mv /home/{os_user} /home/.deleted/{os_user}-$(date +%Y%m%d-%H%M%S)\n"
+                f"sudo mkdir -p {base}/.deleted && sudo chmod 700 {base}/.deleted\n"
+                f"[ -d {base}/{os_user} ] && sudo mv {base}/{os_user} {base}/.deleted/{os_user}-$(date +%Y%m%d-%H%M%S)\n"
                 f"sudo userdel {u}\n"
             )
         else:

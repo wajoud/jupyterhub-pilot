@@ -9,7 +9,7 @@ import pytest
 from jupyterhub_pilot import cli, paths
 
 
-@pytest.mark.parametrize("script", ["install_hub.sh", "install_worker.sh", "add_worker.sh"])
+@pytest.mark.parametrize("script", ["install_hub.sh", "install_worker.sh", "add_worker.sh", "mount_homes.sh"])
 def test_setup_scripts_ship_in_the_package(script):
     path = os.path.join(paths.PACKAGE_DIR, "scripts", script)
     assert subprocess.run(["bash", "-n", path]).returncode == 0  # exists and parses
@@ -53,3 +53,9 @@ def test_load_test_gets_the_remaining_arguments():
 def test_unknown_arguments_are_rejected():
     with pytest.raises(SystemExit):
         cli.main(["install-worker", "--bogus"])
+
+
+def test_mount_homes_passes_the_filesystem_and_default_mount_point():
+    with patch.object(cli, "run_script", return_value=0) as run:
+        assert cli.main(["mount-homes", "fs-0123.efs.ap-south-1.amazonaws.com"]) == 0
+    run.assert_called_once_with("mount_homes.sh", ["fs-0123.efs.ap-south-1.amazonaws.com", "/efs/home"])

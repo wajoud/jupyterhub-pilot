@@ -12,13 +12,17 @@ import sys
 from oauthenticator.google import GoogleOAuthenticator
 
 from jupyterhub_pilot.limits import LimitsPageHandler
+from jupyterhub_pilot import monitoring_handler
 from jupyterhub_pilot.monitoring_handler import (
     AgentWebSocketHandler,
     BrowserWebSocketHandler,
     MonitoringPageHandler,
+    PrometheusHandler,
+    UsageHistoryHandler,
 )
 from jupyterhub_pilot.paths import CONFIG_DIR, PACKAGE_DIR
 from jupyterhub_pilot.spawner import _store, CustomSpawner, worker_ip_for_group
+from jupyterhub_pilot.vault_client import start_renewer
 
 with open(os.path.join(CONFIG_DIR, "hub_settings.json"), "r") as f:
     hub_settings = json.load(f)
@@ -80,6 +84,9 @@ c.JupyterHub.allow_named_servers = False
 c.JupyterHub.spawner_class = CustomSpawner
 c.Spawner.default_url = "/tree"
 
+if hub_settings.get("vault_enabled"):
+    start_renewer()  # keeps the Hub's periodic Vault token alive
+
 # -------------------------------------------------
 # Idle culling: stop servers nobody used for `timeout` seconds (frees worker RAM)
 # -------------------------------------------------
@@ -122,6 +129,8 @@ c.JupyterHub.tornado_settings = {
 
 # Register monitoring endpoints.  Cross-user access to /user/<name> is already
 # blocked by JupyterHub's own access scopes (admin_access = False above).
+monitoring_handler.USAGE_STORE = _store  # 15 days of per-user usage in the state DB
+
 c.JupyterHub.extra_handlers = [
     # Task 4: Monitoring — Agent WebSocket (Worker VMs connect here)
     (r"/monitoring/ws", AgentWebSocketHandler),
@@ -130,6 +139,10 @@ c.JupyterHub.extra_handlers = [
     (r"/monitoring/browser", BrowserWebSocketHandler, {"worker_ip_for_group": worker_ip_for_group}),
     # Task 4: Monitoring — Dashboard page (all authenticated users)
     (r"/monitoring", MonitoringPageHandler),
+    # Per-user usage of the last 15 days (the graphs on the dashboard)
+    (r"/monitoring/history", UsageHistoryHandler),
+    # Prometheus text format for Grafana etc.; off until JUPYTERPILOT_METRICS_TOKEN is set
+    (r"/monitoring/metrics", PrometheusHandler),
     # Per-user RAM/CPU limits (admins only; team limits live in group properties)
     (r"/limits", LimitsPageHandler, {"store": _store}),
 ]

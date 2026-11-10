@@ -80,3 +80,21 @@ def test_cgroup_memory_beats_rss_and_stale_pids_are_dropped(monkeypatch):
 
     assert row["mem_mb"] == 777.0 and row["cpu_limit_pct"] == 50.0
     assert set(ma._PROC_CACHE) == {10}
+
+
+def test_failed_jobs_lists_only_failed_and_never_follows_symlinks(tmp_path, monkeypatch):
+    home = tmp_path / "shared" / "alice"  # homes can be outside /home (shared disk)
+    jobs = home / ".config" / "jupyterhub-pilot" / "jobs"
+    jobs.mkdir(parents=True)
+    (jobs / "report.last").write_text("failed 1762650000\n")
+    (jobs / "fine.last").write_text("ok 1762650000\n")
+    (jobs / "junk.last").write_text("not the format at all")
+    secret = tmp_path / "root-only"
+    secret.write_text("failed 1\n")
+    (jobs / "link.last").symlink_to(secret)
+    accounts = [
+        SimpleNamespace(pw_name="alice", pw_uid=20000, pw_dir=str(home)),
+        SimpleNamespace(pw_name="daemon", pw_uid=1, pw_dir=str(home)),  # system accounts are skipped
+    ]
+    monkeypatch.setattr(ma.pwd, "getpwall", lambda: accounts)
+    assert ma._failed_jobs() == [{"user": "alice", "job": "report", "at": 1762650000}]

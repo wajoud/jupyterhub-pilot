@@ -73,6 +73,31 @@ CREATE TABLE IF NOT EXISTS user_limits (
 );
 """
 
+# One Linux UID per user on every worker, so files on a shared home (EFS/NFS) have the same owner everywhere.
+_DDL_USER_UIDS = """
+CREATE TABLE IF NOT EXISTS user_uids (
+    username    TEXT PRIMARY KEY,
+    uid         INTEGER NOT NULL UNIQUE
+);
+"""
+_FIRST_UID = 20000  # far above the UIDs a worker hands out itself
+
+# Per-user usage, one row per user per 5 minutes, kept USAGE_DAYS days (the graphs on /hub/monitoring).
+_DDL_USER_USAGE = """
+CREATE TABLE IF NOT EXISTS user_usage (
+    username      TEXT NOT NULL,
+    ts            INTEGER NOT NULL,
+    worker        TEXT,
+    cpu_cores     REAL,
+    mem_mb        REAL,
+    mem_peak_mb   REAL,
+    cpu_limit_pct REAL,
+    mem_limit_mb  REAL,
+    PRIMARY KEY (username, ts)
+) WITHOUT ROWID;
+"""
+USAGE_DAYS = 15
+
 _PRAGMA_FAST = """
 PRAGMA journal_mode=WAL;
 PRAGMA synchronous=NORMAL;
@@ -161,6 +186,9 @@ class SessionStore:
             conn.execute(_DDL_TEAM_MAPPINGS)
             conn.execute(_DDL_USER_SESSIONS)
             conn.execute(_DDL_USER_LIMITS)
+            conn.execute(_DDL_USER_UIDS)
+            conn.execute(_DDL_USER_USAGE)
+            conn.execute("CREATE INDEX IF NOT EXISTS user_usage_ts ON user_usage (ts)")
             # Migrate DBs created before terminals_off existed.
             ucols = {r["name"] for r in conn.execute("PRAGMA table_info(user_limits)")}
             if "terminals_off" not in ucols:
@@ -370,3 +398,41 @@ class SessionStore:
         with _write_lock, self._write_conn() as conn:
             conn.execute("DELETE FROM user_limits WHERE username = ?", (username,))
             conn.commit()
+
+    # ── Linux UIDs (shared homes) ─────────────────────────────────────────────
+
+    def get_or_create_uid(self, os_username: str) -> int:
+        """The Linux UID for *os_username*, the same on every worker; allocated on first use."""
+        with _write_lock, self._write_conn() as conn:
+            row = conn.execute("SELECT uid FROM user_uids WHERE username = ?", (os_username,)).fetchone()
+            if row:
+                return int(row["uid"])
+            uid = conn.execute("SELECT COALESCE(MAX(uid), ?) + 1 FROM user_uids", (_FIRST_UID - 1,)).fetchone()[0]
+            conn.execute("INSERT INTO user_uids (username, uid) VALUES (?, ?)", (os_username, uid))
+            conn.commit()
+            return int(uid)
+
+    # ── Usage history ─────────────────────────────────────────────────────────
+
+    def add_usage(self, rows: List[tuple], now: int) -> None:
+        """Store 5-minute rows (username, ts, worker, cpu_cores, mem_mb, mem_peak_mb, cpu_limit_pct,
+        mem_limit_mb) and drop everything older than USAGE_DAYS."""
+        with _write_lock, self._write_conn() as conn:
+            conn.executemany("INSERT OR REPLACE INTO user_usage VALUES (?, ?, ?, ?, ?, ?, ?, ?)", rows)
+            conn.execute("DELETE FROM user_usage WHERE ts < ?", (now - USAGE_DAYS * 86400,))
+            conn.commit()
+
+    def get_usage(self, username: str, since: int, step: int = 300) -> List[List[Any]]:
+        """[[ts, cpu_cores, mem_mb, mem_peak_mb, cpu_limit_pct, mem_limit_mb], ...] averaged per *step* seconds."""
+        rows = self._get_read_conn().execute(
+            "SELECT (ts / ?) * ? AS t, AVG(cpu_cores), AVG(mem_mb), MAX(mem_peak_mb), "
+            "       MAX(cpu_limit_pct), MAX(mem_limit_mb) "
+            "FROM user_usage WHERE username = ? AND ts >= ? GROUP BY t ORDER BY t",
+            (step, step, username, since),
+        ).fetchall()
+        return [list(r) for r in rows]
+
+    def usage_users(self) -> List[str]:
+        """Every user with stored usage (for the admin's user picker)."""
+        rows = self._get_read_conn().execute("SELECT DISTINCT username FROM user_usage ORDER BY username")
+        return [r[0] for r in rows]

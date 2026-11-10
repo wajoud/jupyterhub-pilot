@@ -3,920 +3,624 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>JupyterPilot — Live Monitoring</title>
-<!-- PERF FIX: Google Fonts removed — system-font fallback renders instantly.
-     Inter is used if already cached by the OS/browser; otherwise
-     system-ui provides a visually identical result at zero network cost. -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
+<title>Monitoring · JupyterHub-Pilot</title>
+<!-- One file, no external scripts or fonts: it also works on a Hub with no internet access. -->
 <style>
   :root {
-    --bg:         #0d1117;
-    --surface:    #161b22;
-    --surface2:   #21262d;
-    --border:     #30363d;
-    --text:       #e6edf3;
-    --text-muted: #8b949e;
-    --accent:     #388bfd;
-    --green:      #3fb950;
-    --yellow:     #d29922;
-    --red:        #f85149;
-    --purple:     #a371f7;
-    --cyan:       #39d353;
-    /* PERF FIX: system-font stack — no network request, identical visual result */
-    --font:       'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    --mono:       'JetBrains Mono', 'Cascadia Code', 'Fira Code', ui-monospace, monospace;
+    color-scheme: light;
+    --bg:        #f4f4f2;
+    --surface:   #fcfcfb;   /* cards and chart surface */
+    --border:    #dedcd6;
+    --track:     #e9e8e3;
+    --text:      #0b0b0b;
+    --text-2:    #52514e;
+    --text-3:    #75736d;
+    --link:      #1f5fb0;
+    --series-1:  #2a78d6;   /* CPU */
+    --series-2:  #eb6834;   /* memory */
+    --good:      #0ca30c;
+    --warning:   #fab219;
+    --critical:  #d03b3b;
+    --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg:        #111110;
+      --surface:   #1a1a19;
+      --border:    #33322f;
+      --track:     #2a2a28;
+      --text:      #f0efec;
+      --text-2:    #c3c2b7;
+      --text-3:    #96958c;
+      --link:      #7db2f2;
+      --series-1:  #3987e5;
+      --series-2:  #d95926;
+    }
   }
 
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  *, *::before, *::after { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 var(--font); }
+  a { color: var(--link); }
+  h1, h2, h3, p { margin: 0; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--font);
-    min-height: 100vh;
-    padding: 0;
-  }
-
-  /* ── Header ──────────────────────────────────────────────────── */
   header {
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    padding: 16px 32px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    backdrop-filter: blur(8px);
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 12px 24px; background: var(--surface); border-bottom: 1px solid var(--border);
   }
+  header h1 { font-size: 17px; font-weight: 650; margin-right: auto; }
+  .conn { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 13px; }
+  .conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); }
+  .conn.on i  { background: var(--good); }
+  .conn.off i { background: var(--critical); }
 
-  .logo {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-size: 18px;
-    font-weight: 600;
-    letter-spacing: -0.3px;
-  }
+  main { max-width: 1320px; margin: 0 auto; padding: 20px 24px 48px; display: grid; gap: 20px; }
 
-  .logo-icon {
-    width: 32px;
-    height: 32px;
-    background: linear-gradient(135deg, var(--accent), var(--purple));
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 16px;
+  /* ── Things that need attention ── */
+  #attention {
+    background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--critical);
+    border-radius: 8px; padding: 12px 16px;
   }
+  #attention h2 { font-size: 14px; font-weight: 650; }
+  #attention ul { margin: 6px 0 0; padding-left: 20px; color: var(--text-2); }
 
-  .status-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 13px;
-    color: var(--text-muted);
-  }
+  /* ── Totals ── */
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; }
+  .tile-label { color: var(--text-2); font-size: 12px; }
+  .tile-value { font-size: 22px; font-weight: 650; margin-top: 2px; }
+  .tile-value small { font-size: 13px; font-weight: 400; color: var(--text-2); }
 
-  .status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--text-muted);
-    transition: background 0.3s;
-  }
+  /* ── Worker cards ── */
+  #workers { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 540px), 1fr)); gap: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; min-width: 0; }
+  .card-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .card-head h2 { font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
+  .card-meta { color: var(--text-2); font-size: 12px; margin-right: auto; }
+  .pill { font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 12px; border: 1px solid var(--border); white-space: nowrap; }
+  .pill::before { content: '● '; color: var(--good); }
+  .pill.warn::before { content: '▲ '; color: var(--warning); }
+  .pill.crit::before { content: '■ '; color: var(--critical); }
 
-  .status-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
-  .status-dot.disconnected { background: var(--red); }
+  .meters { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 14px; }
+  .meter-top { display: flex; justify-content: space-between; align-items: baseline; }
+  .meter-label { color: var(--text-2); font-size: 12px; }
+  .meter-value { font-size: 18px; font-weight: 650; }
+  .meter-sub { color: var(--text-3); font-size: 11px; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar { height: 6px; background: var(--track); border-radius: 3px; margin-top: 4px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; border-radius: 3px; background: var(--good); transition: width .5s; }
+  .bar > i.warn { background: var(--warning); }
+  .bar > i.crit { background: var(--critical); }
 
-  /* ── Main layout ─────────────────────────────────────────────── */
-  main {
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 32px 24px;
-  }
+  .section-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-2); }
+  .section-title b { color: var(--text); font-weight: 650; font-size: 13px; margin-right: auto; }
+  .key { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .key::before { content: ''; width: 12px; height: 2px; border-radius: 1px; background: var(--k, var(--text-3)); }
+  .key b { color: var(--text); font-weight: 600; }
 
-  .page-title {
-    font-size: 24px;
-    font-weight: 700;
-    letter-spacing: -0.5px;
-    margin-bottom: 4px;
+  /* ── Users table ── */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-weight: 500; font-size: 12px; color: var(--text-2); padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td.num, td .num { white-space: nowrap; }
+  td.user { font-weight: 600; max-width: 170px; overflow-wrap: anywhere; }
+  .sub { color: var(--text-3); font-size: 11px; font-weight: 400; }
+  td .bar { height: 4px; min-width: 70px; }
+  .empty { color: var(--text-3); padding: 8px 0 0; }
+  .failed { margin-top: 10px; color: var(--text-2); font-size: 13px; }
+  button, select {
+    font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 3px 10px; cursor: pointer;
   }
+  button:hover { border-color: var(--text-3); }
+  button[aria-pressed="true"] { background: var(--text); color: var(--surface); border-color: var(--text); }
+  :focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 
-  .page-subtitle {
-    font-size: 14px;
-    color: var(--text-muted);
-    margin-bottom: 32px;
+  /* ── History ── */
+  .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .controls .spacer { margin-right: auto; }
+  .chart-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-top: 18px; font-size: 12px; color: var(--text-2); }
+  .chart-title b { color: var(--text); font-size: 13px; margin-right: auto; }
+  .chart { position: relative; margin-top: 4px; }
+  .chart svg { display: block; width: 100%; overflow: visible; }
+  .chart text { fill: var(--text-3); font: 11px var(--font); }
+  .chart .grid { stroke: var(--border); stroke-width: 1; }
+  .chart .hair { stroke: var(--text-3); stroke-width: 1; }
+  .chart .limit { stroke: var(--text-2); stroke-width: 1; stroke-dasharray: 4 3; }
+  .tip {
+    position: absolute; top: 0; pointer-events: none; z-index: 2; white-space: nowrap;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 8px #0003;
   }
+  .tip .when { color: var(--text-2); margin-bottom: 2px; }
+  .tip .key b { margin-right: 4px; }
+  details { margin-top: 14px; }
+  summary { cursor: pointer; color: var(--text-2); font-size: 13px; }
+  details .table-wrap { max-height: 320px; overflow-y: auto; margin-top: 8px; }
 
-  /* ── No workers placeholder ──────────────────────────────────── */
-  #no-workers {
-    text-align: center;
-    padding: 80px 24px;
-    color: var(--text-muted);
-  }
+  code { font-family: var(--mono); font-size: 12px; background: var(--track); padding: 1px 5px; border-radius: 4px; }
 
-  #no-workers .icon { font-size: 48px; margin-bottom: 16px; }
-  #no-workers h2 { font-size: 20px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
-  #no-workers code {
-    font-family: var(--mono);
-    font-size: 12px;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    padding: 12px 20px;
-    border-radius: 8px;
-    display: inline-block;
-    margin-top: 16px;
-    color: var(--cyan);
-    text-align: left;
-    line-height: 1.6;
-  }
-
-  /* ── Worker grid ─────────────────────────────────────────────── */
-  #workers-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(640px, 1fr));
-    gap: 24px;
-  }
-
-  /* ── Worker card ─────────────────────────────────────────────── */
-  .worker-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    overflow: hidden;
-    transition: border-color 0.2s, box-shadow 0.2s;
-    animation: slideIn 0.3s ease;
-  }
-
-  @keyframes slideIn {
-    from { opacity: 0; transform: translateY(12px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  .worker-card:hover {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent)22;
-  }
-
-  .card-header {
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: var(--surface2);
-  }
-
-  .worker-name {
-    font-family: var(--mono);
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--accent);
-  }
-
-  .worker-ip {
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-top: 2px;
-  }
-
-  .worker-badge {
-    font-size: 11px;
-    font-weight: 600;
-    padding: 3px 10px;
-    border-radius: 20px;
-    background: var(--green)22;
-    color: var(--green);
-    border: 1px solid var(--green)44;
-  }
-
-  .worker-badge.warn { background: var(--yellow)22; color: var(--yellow); border-color: var(--yellow)44; }
-  .worker-badge.crit { background: var(--red)22;    color: var(--red);    border-color: var(--red)44; }
-
-  .card-body { padding: 20px; }
-
-  /* ── Stat row ─────────────────────────────────────────────────── */
-  .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-    margin-bottom: 20px;
-  }
-
-  .stat-box {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px;
-    text-align: center;
-  }
-
-  .stat-label {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 6px;
-  }
-
-  .stat-value {
-    font-size: 22px;
-    font-weight: 700;
-    font-family: var(--mono);
-    line-height: 1;
-  }
-
-  .stat-unit {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 3px;
-  }
-
-  .color-cpu  { color: var(--accent); }
-  .color-mem  { color: var(--purple); }
-  .color-disk { color: var(--yellow); }
-  .color-net  { color: var(--cyan); }
-
-  /* ── Progress bars ───────────────────────────────────────────── */
-  .metric-row {
-    margin-bottom: 14px;
-  }
-
-  .metric-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 6px;
-  }
-
-  .metric-name {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--text-muted);
-  }
-
-  .metric-val {
-    font-size: 12px;
-    font-family: var(--mono);
-    color: var(--text);
-  }
-
-  .bar-track {
-    height: 6px;
-    background: var(--surface2);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-
-  .bar-fill {
-    height: 100%;
-    border-radius: 3px;
-    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .bar-cpu  { background: linear-gradient(90deg, var(--accent), #6ab0ff); }
-  .bar-mem  { background: linear-gradient(90deg, var(--purple), #c49bff); }
-  .bar-disk { background: linear-gradient(90deg, var(--yellow), #f0bb4a); }
-
-  /* ── Network section ─────────────────────────────────────────── */
-  .net-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    margin-top: 16px;
-    padding-top: 16px;
-    border-top: 1px solid var(--border);
-  }
-
-  .net-box {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 10px 12px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .net-icon { font-size: 18px; }
-
-  .net-label {
-    font-size: 11px;
-    color: var(--text-muted);
-    font-weight: 500;
-  }
-
-  .net-value {
-    font-size: 16px;
-    font-weight: 700;
-    font-family: var(--mono);
-    color: var(--cyan);
-  }
-
-  .net-total {
-    font-size: 10px;
-    color: var(--text-muted);
-    font-family: var(--mono);
-  }
-
-  /* ── Sparkline chart ─────────────────────────────────────────── */
-  .chart-row {
-    margin-top: 16px;
-    padding-top: 16px;
-    border-top: 1px solid var(--border);
-  }
-
-  /* Chart.js sizes the canvas to its parent; a parent holding only the canvas
-     keeps the chart from spilling over the label row onto "Last update". */
-  .chart-box {
-    height: 60px;
-    position: relative;
-  }
-
-  .chart-label {
-    font-size: 11px;
-    color: var(--text-muted);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 6px;
-  }
-
-  /* ── Load average strip ──────────────────────────────────────── */
-  .load-strip {
-    display: flex;
-    gap: 8px;
-    margin-top: 12px;
-  }
-
-  .load-chip {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 12px;
-    font-family: var(--mono);
-    color: var(--text-muted);
-  }
-
-  .load-chip span { color: var(--text); font-weight: 600; }
-
-  /* ── Last-seen timestamp ──────────────────────────────────────── */
-  .last-seen {
-    font-size: 11px;
-    color: var(--text-muted);
-    font-family: var(--mono);
-    margin-top: 12px;
-  }
-
-  /* ── Responsive ──────────────────────────────────────────────── */
-  /* ── Fleet summary ───────────────────────────────────────────── */
-  .summary {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-    margin: -16px 0 24px;
-  }
-  .summary-box {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 12px 16px;
-  }
-  .summary-label {
-    font-size: 11px;
-    color: var(--text-muted);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-  .summary-value {
-    font-family: var(--mono);
-    font-size: 20px;
-    font-weight: 700;
-    margin-top: 4px;
-  }
-
-  .worker-meta {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 2px;
-  }
-
-  /* ── Per-user table ──────────────────────────────────────────── */
-  .users-section {
-    margin-top: 16px;
-    padding-top: 16px;
-    border-top: 1px solid var(--border);
-  }
-  .users-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-    margin-top: 6px;
-  }
-  .users-table th {
-    text-align: left;
-    font-size: 10px;
-    color: var(--text-muted);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    padding: 4px 6px;
-    border-bottom: 1px solid var(--border);
-  }
-  .users-table td {
-    padding: 6px;
-    border-bottom: 1px solid var(--border);
-    font-family: var(--mono);
-    vertical-align: middle;
-  }
-  .users-table td.user-name {
-    font-family: var(--font);
-    font-weight: 600;
-    max-width: 120px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .users-table .cell-sub { color: var(--text-muted); font-size: 10px; }
-  .mini-track {
-    height: 4px;
-    background: var(--surface2);
-    border-radius: 2px;
-    margin-top: 3px;
-    min-width: 60px;
-  }
-  .mini-fill { height: 100%; border-radius: 2px; }
-  .users-empty {
-    color: var(--text-muted);
-    font-size: 12px;
-    padding: 8px 0 0;
-  }
-
-  @media (max-width: 700px) {
-    #workers-grid { grid-template-columns: 1fr; }
-    .summary      { grid-template-columns: repeat(2, 1fr); }
-    .users-table .hide-narrow { display: none; }
-    .stats-grid   { grid-template-columns: repeat(2, 1fr); }
-    .net-row      { grid-template-columns: 1fr; }
+  @media (max-width: 720px) {
+    header, main { padding-left: 16px; padding-right: 16px; }
+    .tiles { grid-template-columns: repeat(2, 1fr); }
+    .meters { grid-template-columns: 1fr; gap: 10px; }
+    .hide-narrow { display: none; }
   }
 </style>
 </head>
 <body>
 
 <header>
-  <div class="logo">
-    <div class="logo-icon">🛰️</div>
-    JupyterPilot Monitoring
-  </div>
-  <div class="status-bar">
-    <div class="status-dot" id="status-dot"></div>
-    <span id="status-text">Connecting…</span>
-  </div>
+  <h1>Monitoring</h1>
+  <div class="conn" id="conn" role="status"><i></i><span>Connecting…</span></div>
+  <a href="home">← Back to the Hub</a>
 </header>
 
 <main>
-  <div class="page-title">Live Infrastructure Monitoring</div>
-  <div class="page-subtitle" id="subtitle">Connecting to Hub…</div>
+  <section id="attention" hidden>
+    <h2>⚠ Needs attention</h2>
+    <ul id="attention-list"></ul>
+  </section>
 
-  <div class="summary" id="summary">
-    <div class="summary-box"><div class="summary-label">Workers</div><div class="summary-value" id="sum-workers">—</div></div>
-    <div class="summary-box"><div class="summary-label">Notebook servers</div><div class="summary-value" id="sum-users">—</div></div>
-    <div class="summary-box"><div class="summary-label">Avg CPU</div><div class="summary-value color-cpu" id="sum-cpu">—</div></div>
-    <div class="summary-box"><div class="summary-label">Memory used</div><div class="summary-value color-mem" id="sum-mem">—</div></div>
-  </div>
+  <section class="tiles" aria-label="Totals">
+    <div class="tile"><div class="tile-label">Workers online</div><div class="tile-value num" id="t-workers">–</div></div>
+    <div class="tile"><div class="tile-label">Notebook servers running</div><div class="tile-value num" id="t-users">–</div></div>
+    <div class="tile"><div class="tile-label">CPU in use, all workers</div><div class="tile-value num" id="t-cpu">–</div></div>
+    <div class="tile"><div class="tile-label">Memory in use, all workers</div><div class="tile-value num" id="t-mem">–</div></div>
+  </section>
 
-  <div id="no-workers" style="display:none;">
-    <div class="icon">🖥️</div>
-    <h2>No Worker Agents Connected</h2>
-    <p>Start the metrics agent on each Worker VM to see live metrics here.</p>
-    <code>pip install psutil websockets<br>JUPYTERPILOT_AGENT_TOKEN=&lt;token&gt; python3 /opt/jupyterhub-pilot/jupyterhub_pilot/metrics_agent.py \<br>&nbsp;&nbsp;--hub ws://&lt;HUB_PRIVATE_IP&gt;:8000/hub/monitoring/ws</code>
-  </div>
+  <section class="card" id="no-workers" hidden>
+    <h2 style="font-size:15px">No worker is reporting</h2>
+    <p style="color:var(--text-2);margin-top:6px">
+      Each worker runs a metrics agent that connects to the Hub. On the worker, check it with
+      <code>sudo systemctl status jupyterhub_pilot-metrics</code> and read its log with
+      <code>sudo journalctl -u jupyterhub_pilot-metrics -n 50</code>. You only see the workers of your own teams.
+    </p>
+  </section>
 
-  <div id="workers-grid"></div>
+  <section id="workers" aria-label="Workers"></section>
+
+  <section class="card" id="history" aria-labelledby="history-h">
+    <h2 id="history-h" style="font-size:15px">Usage history</h2>
+    <p class="sub" style="font-size:12px">Saved every 5 minutes while a notebook server runs, kept for 15 days.</p>
+    <div class="controls">
+      <label for="h-user" id="h-user-label" hidden>User</label>
+      <select id="h-user" hidden></select>
+      <b id="h-name" class="spacer"></b>
+      <button type="button" data-days="1" aria-pressed="true">24 hours</button>
+      <button type="button" data-days="7" aria-pressed="false">7 days</button>
+      <button type="button" data-days="15" aria-pressed="false">15 days</button>
+    </div>
+    <p class="empty" id="h-empty" hidden></p>
+    <div id="h-charts">
+      <div class="chart-title"><b>CPU cores in use</b><span class="key" style="--k:var(--series-1)">Average</span><span id="h-cpu-limit"></span></div>
+      <div class="chart" id="h-cpu"></div>
+      <div class="chart-title"><b>Memory</b><span class="key" style="--k:var(--series-2)">Peak</span><span class="key" style="--k:var(--text-3)">Average</span><span id="h-mem-limit"></span></div>
+      <div class="chart" id="h-mem"></div>
+      <details id="h-details"><summary>Show as a table</summary><div class="table-wrap"><table id="h-table"></table></div></details>
+    </div>
+  </section>
 </main>
 
 <script>
-// ─────────────────────────────────────────────────────────────────────────────
-// State
-// ─────────────────────────────────────────────────────────────────────────────
-const workers = {};      // { hostname: { snapshot, charts } }
-const HISTORY = 30;      // number of sparkline data points
-
-// PERF FIX: read CSS custom properties once at startup; cache results.
-// getComputedStyle() forces a style recalc — calling it on every update
-// (once per worker per tick) causes unnecessary layout thrashing.
-const _root = document.documentElement;
-const _cs   = getComputedStyle(_root);
-const _COLORS = {
-  red:    _cs.getPropertyValue('--red').trim(),
-  yellow: _cs.getPropertyValue('--yellow').trim(),
-  green:  _cs.getPropertyValue('--green').trim(),
+'use strict';
+// Names (workers, users, jobs) come from agents and users: they only ever reach the page through textContent.
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+const svgEl = (tag, attrs) => {
+  const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
 };
+const byId = id => document.getElementById(id);
 
-function lerp(a, b, t) { return a + (b - a) * t; }
-
-function colorForPct(pct) {
-  // PERF FIX: pure object lookup — no getComputedStyle per call.
-  if (pct >= 90) return _COLORS.red;
-  if (pct >= 70) return _COLORS.yellow;
-  return _COLORS.green;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Build worker card
-// ─────────────────────────────────────────────────────────────────────────────
-// Hostnames come from agents: escape before putting them into HTML.
-function esc(str) {
-  return String(str).replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[c]));
-}
-
-function createCard(hostname) {
-  const h = esc(hostname);
-  const card = document.createElement('div');
-  card.className = 'worker-card';
-  card.id = `card-${CSS.escape(hostname)}`;
-  card.innerHTML = `
-    <div class="card-header">
-      <div>
-        <div class="worker-name" id="wname-${h}">${h}</div>
-        <div class="worker-ip"  id="wip-${h}">—</div>
-        <div class="worker-meta" id="wmeta-${h}"></div>
-      </div>
-      <div class="worker-badge" id="badge-${h}">LIVE</div>
-    </div>
-    <div class="card-body">
-      <!-- Stats row -->
-      <div class="stats-grid">
-        <div class="stat-box">
-          <div class="stat-label">CPU</div>
-          <div class="stat-value color-cpu" id="scpu-${h}">—</div>
-          <div class="stat-unit">percent</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-label">Memory</div>
-          <div class="stat-value color-mem" id="smem-${h}">—</div>
-          <div class="stat-unit">percent</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-label">Disk</div>
-          <div class="stat-value color-disk" id="sdisk-${h}">—</div>
-          <div class="stat-unit">percent</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-label">↑ Speed</div>
-          <div class="stat-value color-net" id="supkbps-${h}">—</div>
-          <div class="stat-unit">KB/s up</div>
-        </div>
-      </div>
-
-      <!-- CPU bar -->
-      <div class="metric-row">
-        <div class="metric-header">
-          <span class="metric-name">CPU Usage</span>
-          <span class="metric-val" id="vcpu-${h}">—</span>
-        </div>
-        <div class="bar-track"><div class="bar-fill bar-cpu" id="bcpu-${h}" style="width:0%"></div></div>
-      </div>
-
-      <!-- Memory bar -->
-      <div class="metric-row">
-        <div class="metric-header">
-          <span class="metric-name">Memory</span>
-          <span class="metric-val" id="vmem-${h}">—</span>
-        </div>
-        <div class="bar-track"><div class="bar-fill bar-mem" id="bmem-${h}" style="width:0%"></div></div>
-      </div>
-
-      <!-- Disk bar -->
-      <div class="metric-row">
-        <div class="metric-header">
-          <span class="metric-name">Disk (root)</span>
-          <span class="metric-val" id="vdisk-${h}">—</span>
-        </div>
-        <div class="bar-track"><div class="bar-fill bar-disk" id="bdisk-${h}" style="width:0%"></div></div>
-      </div>
-
-      <!-- Load average -->
-      <div class="load-strip" id="load-${h}"></div>
-
-      <!-- Network row -->
-      <div class="net-row">
-        <div class="net-box">
-          <div class="net-icon">⬆️</div>
-          <div>
-            <div class="net-label">Upload</div>
-            <div class="net-value" id="nup-${h}">—</div>
-            <div class="net-total" id="nuptot-${h}">—</div>
-          </div>
-        </div>
-        <div class="net-box">
-          <div class="net-icon">⬇️</div>
-          <div>
-            <div class="net-label">Download</div>
-            <div class="net-value" id="ndown-${h}">—</div>
-            <div class="net-total" id="ndowntot-${h}">—</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Per-user usage -->
-      <div class="users-section">
-        <div class="chart-label" id="ulabel-${h}">Notebook servers</div>
-        <div id="users-${h}"><div class="users-empty">No notebook servers running</div></div>
-      </div>
-
-      <!-- CPU Sparkline -->
-      <div class="chart-row">
-        <div class="chart-label">CPU History (last ${HISTORY} samples)</div>
-        <div class="chart-box"><canvas id="chart-${h}"></canvas></div>
-      </div>
-
-      <div class="last-seen" id="ls-${h}">Last update: —</div>
-    </div>
-  `;
-  document.getElementById('workers-grid').appendChild(card);
-
-  // Build sparkline chart
-  const ctx = document.getElementById(`chart-${hostname}`);
-  const chart = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: Array(HISTORY).fill(''),
-      datasets: [
-        {
-          label: 'CPU %',
-          data: Array(HISTORY).fill(null),
-          borderColor: '#388bfd',
-          backgroundColor: '#388bfd18',
-          borderWidth: 2,
-          tension: 0.4,
-          fill: true,
-          pointRadius: 0,
-        },
-        {
-          label: 'Mem %',
-          data: Array(HISTORY).fill(null),
-          borderColor: '#a371f7',
-          backgroundColor: '#a371f718',
-          borderWidth: 1.5,
-          tension: 0.4,
-          fill: false,
-          pointRadius: 0,
-        },
-      ],
-    },
-    options: {
-      animation: false,
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: { enabled: false } },
-      scales: {
-        x: { display: false },
-        y: {
-          min: 0,
-          max: 100,
-          display: false,
-          grid: { color: '#30363d', drawBorder: false },
-        },
-      },
-    },
-  });
-
-  workers[hostname] = { chart, cpuHistory: [], memHistory: [] };
-  return card;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Update card with new snapshot
-// ─────────────────────────────────────────────────────────────────────────────
-function fmtBytes(mb) {
-  if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB';
-  return mb.toFixed(0) + ' MB';
-}
-
-function fmtNetRate(kbps) {
-  if (kbps >= 1024) return (kbps / 1024).toFixed(2) + ' MB/s';
-  return kbps.toFixed(1) + ' KB/s';
-}
-
-function fmtTotal(bytes) {
-  const gb = bytes / 1024 / 1024 / 1024;
-  if (gb >= 1) return (gb).toFixed(2) + ' GB total';
-  const mb = bytes / 1024 / 1024;
-  return mb.toFixed(1) + ' MB total';
-}
-
+// ── Formatting ───────────────────────────────────────────────────────────────
+const fmtMB = mb => mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : Math.round(mb) + ' MB';
+const fmtRate = kb => kb >= 1024 ? (kb / 1024).toFixed(1) + ' MB/s' : Math.round(kb) + ' KB/s';
+const fmtCores = c => c.toFixed(2) + ' cores';
 function fmtDur(s) {
-  if (s == null) return '—';
+  if (s == null) return '–';
   const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
-  if (d) return `${d}d ${h}h`;
-  if (h) return `${h}h ${m}m`;
-  return `${m}m`;
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
 }
+const level = (pct, warn = 70, crit = 90) => pct >= crit ? 'crit' : pct >= warn ? 'warn' : '';
 
-function miniBar(pct) {
-  const p = Math.max(0, Math.min(100, pct || 0));
-  return `<div class="mini-track"><div class="mini-fill" style="width:${p}%;background:${colorForPct(p)}"></div></div>`;
+// ── Line chart (SVG): one y-axis, crosshair + tooltip listing every series ───
+// cfg: { series: [{name, color, pts: [[t, v]], area}], t0, t1, gap, fmt, yMax, limit: {value, label}, height, compact }
+function niceMax(v) {
+  if (!(v > 0)) return 1;
+  const p = 10 ** Math.floor(Math.log10(v)), m = v / p;
+  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p;
 }
+function drawChart(box, cfg) {
+  const W = Math.max(box.clientWidth, 120), H = cfg.height;
+  const m = cfg.compact ? { l: 0, r: 0, t: 4, b: 2 } : { l: 56, r: 8, t: 14, b: 22 };
+  const span = Math.max(cfg.t1 - cfg.t0, 1);
+  const top = cfg.yMax || niceMax(Math.max(cfg.limit ? cfg.limit.value : 0,
+    ...cfg.series.flatMap(s => s.pts.map(p => p[1]))) * 1.02);
+  const x = t => m.l + (t - cfg.t0) / span * (W - m.l - m.r);
+  const y = v => m.t + (1 - Math.min(v, top) / top) * (H - m.t - m.b);
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img', 'aria-label': cfg.label });
 
-// One row per notebook server. Bars compare usage with the user's own limit
-// (the server's cgroup) when there is one, else with the whole worker.
-function usersHtml(users, workerMemMb) {
-  if (!users || !users.length) return '<div class="users-empty">No notebook servers running</div>';
-  const rows = users.map(u => {
-    const usedCorePct = (u.cpu_cores || 0) * 100;            // % of one core
-    const cpuPct = u.cpu_limit_pct ? usedCorePct / u.cpu_limit_pct * 100 : u.cpu_percent;
-    const cpuSub = u.cpu_limit_pct ? `of ${(u.cpu_limit_pct / 100).toFixed(2)} core limit` : 'of worker';
-    const memCap = u.mem_limit_mb || workerMemMb;
-    const memPct = memCap ? u.mem_mb / memCap * 100 : 0;
-    const memSub = u.mem_limit_mb ? `of ${fmtBytes(u.mem_limit_mb)} limit` : 'no limit';
-    const home = u.home_bytes == null ? '—' : fmtBytes(u.home_bytes / 1048576);
-    const who = u.linux_user && u.linux_user !== u.name ? `<div class="cell-sub">as ${esc(u.linux_user)}</div>` : '';
-    return `<tr>
-      <td class="user-name" title="${esc(u.name)}">${esc(u.name)}${who}</td>
-      <td>${(u.cpu_cores || 0).toFixed(2)} cores<div class="cell-sub">${esc(cpuSub)}</div>${miniBar(cpuPct)}</td>
-      <td>${fmtBytes(u.mem_mb)}<div class="cell-sub">${esc(memSub)}</div>${miniBar(memPct)}</td>
-      <td>${esc(u.kernels)}</td>
-      <td class="hide-narrow">${home}</td>
-      <td class="hide-narrow">${fmtDur(u.uptime_s)}</td>
-    </tr>`;
-  }).join('');
-  return `<table class="users-table">
-    <thead><tr><th>User</th><th>CPU</th><th>Memory</th><th>Kernels</th>
-      <th class="hide-narrow">Home</th><th class="hide-narrow">Up</th></tr></thead>
-    <tbody>${rows}</tbody></table>`;
-}
-
-function updateSummary() {
-  const snaps = Object.values(workers).map(w => w.snap).filter(Boolean);
-  const n = snaps.length;
-  const used = snaps.reduce((a, s) => a + s.memory.used_mb, 0);
-  const total = snaps.reduce((a, s) => a + s.memory.total_mb, 0);
-  document.getElementById('sum-workers').textContent = n;
-  document.getElementById('sum-users').textContent = snaps.reduce((a, s) => a + (s.users || []).length, 0);
-  document.getElementById('sum-cpu').textContent =
-    n ? (snaps.reduce((a, s) => a + s.cpu.percent, 0) / n).toFixed(1) + '%' : '—';
-  document.getElementById('sum-mem').textContent = n ? `${fmtBytes(used)} / ${fmtBytes(total)}` : '—';
-}
-
-function updateCard(hostname, snap) {
-  if (!workers[hostname]) createCard(hostname);
-  const w = workers[hostname];
-  w.snap = snap;
-
-  const cpu   = snap.cpu;
-  const mem   = snap.memory;
-  const disk  = snap.disk;
-  const net   = snap.network;
-  const badge = cpu.percent >= 90 ? 'crit' : cpu.percent >= 70 ? 'warn' : '';
-  const usersMarkup = usersHtml(snap.users, mem.total_mb);
-  const nUsers = (snap.users || []).length;
-  const metaStr = `${cpu.core_count} cores` + (snap.uptime_s != null ? ` · up ${fmtDur(snap.uptime_s)}` : '');
-
-  // PERF FIX: pre-compute all formatted values once, then apply inside a
-  // single requestAnimationFrame to avoid multiple forced reflows.
-  const cpuPct   = cpu.percent.toFixed(1) + '%';
-  const memPct   = mem.percent.toFixed(1) + '%';
-  const diskPct  = disk.percent.toFixed(1) + '%';
-  const upRate   = fmtNetRate(net.upload_kbps);
-  const downRate = fmtNetRate(net.download_kbps);
-  const memStr   = `${fmtBytes(mem.used_mb)} / ${fmtBytes(mem.total_mb)}`;
-  const diskStr  = `${disk.used_gb} GB / ${disk.total_gb} GB`;
-  const upTot    = fmtTotal(net.bytes_sent);
-  const downTot  = fmtTotal(net.bytes_recv);
-  const ts       = 'Last update: ' + new Date(snap.timestamp * 1000).toLocaleTimeString();
-  const loadHtml = (cpu.load_avg && cpu.load_avg.length)
-    ? ['1m', '5m', '15m'].map((t, i) =>
-        `<div class="load-chip">${t}: <span>${esc(cpu.load_avg[i])}</span></div>`
-      ).join('')
-    : null;
-
-  requestAnimationFrame(() => {
-    // Header
-    document.getElementById(`wip-${hostname}`).textContent  = snap.ip || '—';
-    const badgeEl = document.getElementById(`badge-${hostname}`);
-    badgeEl.className   = `worker-badge ${badge}`;
-    badgeEl.textContent = 'LIVE';
-
-    // Stat boxes
-    document.getElementById(`scpu-${hostname}`).textContent    = cpuPct;
-    document.getElementById(`smem-${hostname}`).textContent    = memPct;
-    document.getElementById(`sdisk-${hostname}`).textContent   = diskPct;
-    document.getElementById(`supkbps-${hostname}`).textContent = upRate;
-
-    // Bars
-    document.getElementById(`bcpu-${hostname}`).style.width  = cpu.percent + '%';
-    document.getElementById(`bmem-${hostname}`).style.width  = mem.percent + '%';
-    document.getElementById(`bdisk-${hostname}`).style.width = disk.percent + '%';
-
-    document.getElementById(`vcpu-${hostname}`).textContent  = cpuPct;
-    document.getElementById(`vmem-${hostname}`).textContent  = memStr;
-    document.getElementById(`vdisk-${hostname}`).textContent = diskStr;
-
-    // Load average
-    if (loadHtml !== null) {
-      document.getElementById(`load-${hostname}`).innerHTML = loadHtml;
+  for (const f of cfg.compact ? [0] : [0, 0.5, 1]) {
+    svg.append(svgEl('line', { class: 'grid', x1: m.l, x2: W - m.r, y1: y(top * f), y2: y(top * f) }));
+    if (!cfg.compact) {
+      const t = svgEl('text', { x: m.l - 6, y: y(top * f) + 4, 'text-anchor': 'end' });
+      t.textContent = cfg.fmt(top * f);
+      svg.append(t);
     }
+  }
+  if (!cfg.compact) {
+    const days = span > 36 * 3600;
+    for (let i = 0; i <= 4; i++) {
+      const t = cfg.t0 + span * i / 4, d = new Date(t * 1000);
+      const lab = svgEl('text', { x: x(t), y: H - 6, 'text-anchor': i === 0 ? 'start' : i === 4 ? 'end' : 'middle' });
+      lab.textContent = days ? d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+                             : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      svg.append(lab);
+    }
+  }
+  for (const s of cfg.series) {
+    // A gap in time (server stopped) breaks the line instead of drawing through it.
+    const runs = [];
+    s.pts.forEach((p, i) => {
+      if (i === 0 || p[0] - s.pts[i - 1][0] > cfg.gap) runs.push([]);
+      runs[runs.length - 1].push(p);
+    });
+    for (const run of runs) {
+      const d = run.map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join('');
+      if (s.area) {
+        svg.append(svgEl('path', { d: `${d}L${x(run[run.length - 1][0]).toFixed(1)},${y(0)}L${x(run[0][0]).toFixed(1)},${y(0)}Z`,
+          style: `fill:${s.color};fill-opacity:.18` }));
+      } else if (run.length === 1) {
+        svg.append(svgEl('circle', { cx: x(run[0][0]), cy: y(run[0][1]), r: 2, style: `fill:${s.color}` }));
+      } else {
+        svg.append(svgEl('path', { d, style: `fill:none;stroke:${s.color};stroke-width:2;stroke-linejoin:round;stroke-linecap:round` }));
+      }
+    }
+  }
+  if (cfg.limit) {
+    svg.append(svgEl('line', { class: 'limit', x1: m.l, x2: W - m.r, y1: y(cfg.limit.value), y2: y(cfg.limit.value) }));
+    const t = svgEl('text', { x: W - m.r, y: y(cfg.limit.value) - 4, 'text-anchor': 'end' });
+    t.textContent = cfg.limit.label;
+    svg.append(t);
+  }
 
-    // Network
-    document.getElementById(`nup-${hostname}`).textContent      = upRate;
-    document.getElementById(`ndown-${hostname}`).textContent    = downRate;
-    document.getElementById(`nuptot-${hostname}`).textContent   = upTot;
-    document.getElementById(`ndowntot-${hostname}`).textContent = downTot;
+  // Hover: the pointer picks a time; the tooltip lists every series at that time.
+  const times = [...new Set(cfg.series.flatMap(s => s.pts.map(p => p[0])))].sort((a, b) => a - b);
+  const hair = svgEl('line', { class: 'hair', y1: m.t, y2: H - m.b, visibility: 'hidden' });
+  svg.append(hair);
+  const tip = el('div', 'tip');
+  tip.hidden = true;
+  const show = px => {
+    box._px = px;
+    if (px == null || !times.length) { hair.setAttribute('visibility', 'hidden'); tip.hidden = true; return; }
+    const want = cfg.t0 + (px - m.l) / (W - m.l - m.r) * span;
+    const t = times.reduce((best, v) => Math.abs(v - want) < Math.abs(best - want) ? v : best);
+    hair.setAttribute('x1', x(t)); hair.setAttribute('x2', x(t)); hair.setAttribute('visibility', 'visible');
+    tip.replaceChildren(el('div', 'when', new Date(t * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: cfg.compact ? '2-digit' : undefined })));
+    for (const s of cfg.series) {
+      const p = s.pts.find(q => q[0] === t);
+      if (!p) continue;
+      const row = el('div', 'key');
+      row.style.setProperty('--k', s.color);
+      row.append(el('b', '', cfg.fmt(p[1])), s.name);
+      tip.append(row);
+    }
+    tip.hidden = false;
+    tip.style.left = Math.max(0, Math.min(x(t) + 10, W - tip.offsetWidth)) + 'px';
+  };
+  svg.addEventListener('pointermove', e => show(e.clientX - svg.getBoundingClientRect().left));
+  svg.addEventListener('pointerleave', () => show(null));
+  const keep = box._px;
+  box.replaceChildren(svg, tip);
+  if (keep != null) show(keep);   // live charts redraw every few seconds: keep the tooltip open
+}
 
-    // Timestamp
-    document.getElementById(`ls-${hostname}`).textContent = ts;
+// ── Worker cards ─────────────────────────────────────────────────────────────
+const workers = {};          // hostname -> card state
+const LIVE_SAMPLES = 150;    // 5 minutes at one sample every 2 s
 
-    // Worker details + per-user usage
-    document.getElementById(`wmeta-${hostname}`).textContent = metaStr;
-    document.getElementById(`ulabel-${hostname}`).textContent = `Notebook servers (${nUsers})`;
-    document.getElementById(`users-${hostname}`).innerHTML = usersMarkup;
-    updateSummary();
+function meter(label) {
+  const root = el('div'), top = el('div', 'meter-top'), value = el('span', 'meter-value num', '–');
+  const bar = el('div', 'bar'), fill = el('i'), sub = el('div', 'meter-sub');
+  top.append(el('span', 'meter-label', label), value);
+  bar.append(fill);
+  root.append(top, bar, sub);
+  return { root, set(pct, subText, lvl) {
+    value.textContent = pct.toFixed(0) + '%';
+    fill.style.width = Math.min(pct, 100) + '%';
+    fill.className = lvl;
+    sub.textContent = subText;
+  } };
+}
 
-    // Hide placeholder
-    document.getElementById('no-workers').style.display = 'none';
+function createCard(host) {
+  const w = { cpu: [], mem: [], rows: new Map(), snap: null };
+  w.el = el('article', 'card');
+  const head = el('div', 'card-head');
+  w.meta = el('span', 'card-meta num');
+  w.pill = el('span', 'pill', 'Healthy');
+  head.append(el('h2', '', host), w.meta, w.pill);
+
+  const meters = el('div', 'meters');
+  w.mCpu = meter('CPU'); w.mMem = meter('Memory'); w.mDisk = meter('Disk');
+  meters.append(w.mCpu.root, w.mMem.root, w.mDisk.root);
+
+  const liveTitle = el('div', 'section-title');
+  w.kCpu = el('b'); w.kMem = el('b');
+  const k1 = el('span', 'key', 'CPU '), k2 = el('span', 'key', 'Memory ');
+  k1.style.setProperty('--k', 'var(--series-1)'); k1.append(w.kCpu);
+  k2.style.setProperty('--k', 'var(--series-2)'); k2.append(w.kMem);
+  w.net = el('span', 'num');
+  liveTitle.append(el('b', '', 'Last 5 minutes'), k1, k2, w.net);
+  w.live = el('div', 'chart');
+
+  const usersTitle = el('div', 'section-title');
+  w.usersLabel = el('b', '', 'Notebook servers');
+  usersTitle.append(w.usersLabel);
+  const wrap = el('div', 'table-wrap'), table = el('table'), thead = el('thead'), tr = el('tr');
+  for (const [name, cls] of [['User'], ['CPU'], ['Memory'], ['Kernels'], ['Home', 'hide-narrow'], ['Running', 'hide-narrow'], ['']]) {
+    const th = el('th', cls, name); th.scope = 'col'; tr.append(th);
+  }
+  thead.append(tr);
+  w.tbody = el('tbody');
+  table.append(thead, w.tbody);
+  wrap.append(table);
+  w.table = wrap;
+  w.noUsers = el('div', 'empty', 'No notebook server is running here.');
+  w.failed = el('div', 'failed');
+  w.failed.setAttribute('role', 'status');
+
+  w.el.append(head, meters, liveTitle, w.live, usersTitle, wrap, w.noUsers, w.failed);
+  byId('workers').append(w.el);
+  return workers[host] = w;
+}
+
+function userRow(w, name) {
+  const r = { tr: el('tr') };
+  const cell = cls => { const td = el('td', cls); r.tr.append(td); return td; };
+  const usage = td => {
+    const value = el('div', 'num'), sub = el('div', 'sub'), bar = el('div', 'bar'), fill = el('i');
+    bar.append(fill); td.append(value, sub, bar);
+    return (text, subText, pct) => {
+      value.textContent = text; sub.textContent = subText;
+      fill.style.width = Math.max(0, Math.min(pct, 100)) + '%'; fill.className = level(pct);
+    };
+  };
+  const user = cell('user');
+  r.as = el('div', 'sub');
+  user.append(name, r.as);
+  r.cpu = usage(cell()); r.mem = usage(cell());
+  r.kernels = cell('num'); r.home = cell('num hide-narrow'); r.up = cell('num hide-narrow');
+  const btn = el('button', '', 'History');
+  btn.type = 'button';
+  btn.setAttribute('aria-label', `Usage history of ${name}`);
+  btn.onclick = () => { loadHistory(name); byId('history').scrollIntoView({ behavior: 'smooth' }); };
+  cell().append(btn);
+  w.tbody.append(r.tr);
+  w.rows.set(name, r);
+  return r;
+}
+
+function updateUsers(w, users, workerMemMb) {
+  const seen = new Set();
+  for (const u of users) {
+    const name = String(u.name);
+    seen.add(name);
+    const r = w.rows.get(name) || userRow(w, name);
+    // Compared with the user's own limit (their server's cgroup) when there is one, else with the whole worker.
+    const cores = u.cpu_cores || 0;
+    r.cpu(fmtCores(cores),
+      u.cpu_limit_pct ? `of ${(u.cpu_limit_pct / 100).toFixed(2)} limit` : 'no limit',
+      u.cpu_limit_pct ? cores * 100 / u.cpu_limit_pct * 100 : u.cpu_percent || 0);
+    const cap = u.mem_limit_mb || workerMemMb;
+    r.mem(fmtMB(u.mem_mb || 0), u.mem_limit_mb ? `of ${fmtMB(u.mem_limit_mb)} limit` : 'no limit', cap ? u.mem_mb / cap * 100 : 0);
+    r.as.textContent = u.linux_user && u.linux_user !== name ? `as ${u.linux_user}` : '';
+    r.kernels.textContent = u.kernels ?? '–';
+    r.home.textContent = u.home_bytes == null ? '–' : fmtMB(u.home_bytes / 1048576);
+    r.up.textContent = fmtDur(u.uptime_s);
+    w.tbody.append(r.tr);   // keeps the agent's order (most memory first) without rebuilding rows
+  }
+  for (const [name, r] of w.rows) if (!seen.has(name)) { r.tr.remove(); w.rows.delete(name); }
+  w.table.hidden = !users.length;
+  w.noUsers.hidden = !!users.length;
+  w.usersLabel.textContent = `Notebook servers (${users.length})`;
+}
+
+function updateCard(host, snap) {
+  const w = workers[host] || createCard(host);
+  w.snap = snap;
+  const { cpu, memory: mem, disk, network: net } = snap;
+  const users = snap.users || [];
+
+  w.meta.textContent = [snap.ip, `${cpu.core_count} cores`, snap.uptime_s != null ? `up ${fmtDur(snap.uptime_s)}` : null].filter(Boolean).join(' · ');
+  const worst = [level(cpu.percent), level(mem.percent), level(disk.percent, 80, 90)];
+  const lvl = worst.includes('crit') ? 'crit' : worst.includes('warn') ? 'warn' : '';
+  w.pill.className = 'pill ' + lvl;
+  w.pill.textContent = lvl === 'crit' ? 'Critical' : lvl === 'warn' ? 'Busy' : 'Healthy';
+
+  const load = cpu.load_avg && cpu.load_avg.length ? `load ${cpu.load_avg[0]} · ${cpu.load_avg[1]} · ${cpu.load_avg[2]}` : '';
+  w.mCpu.set(cpu.percent, load, worst[0]);
+  w.mMem.set(mem.percent, `${fmtMB(mem.used_mb)} of ${fmtMB(mem.total_mb)}`, worst[1]);
+  w.mDisk.set(disk.percent, `${disk.used_gb} of ${disk.total_gb} GB`, worst[2]);
+
+  w.cpu.push([snap.timestamp, cpu.percent]);
+  w.mem.push([snap.timestamp, mem.percent]);
+  if (w.cpu.length > LIVE_SAMPLES) { w.cpu.shift(); w.mem.shift(); }
+  w.kCpu.textContent = cpu.percent.toFixed(0) + '%';
+  w.kMem.textContent = mem.percent.toFixed(0) + '%';
+  w.net.textContent = `↑ ${fmtRate(net.upload_kbps)}  ↓ ${fmtRate(net.download_kbps)}`;
+  drawChart(w.live, {
+    label: `CPU and memory of ${host}, last 5 minutes`, height: 56, compact: true, yMax: 100,
+    t0: snap.timestamp - LIVE_SAMPLES * 2, t1: snap.timestamp, gap: 10, fmt: v => v.toFixed(0) + '%',
+    series: [{ name: 'CPU', color: 'var(--series-1)', pts: w.cpu }, { name: 'Memory', color: 'var(--series-2)', pts: w.mem }],
   });
 
-  // Sparkline update (chart API handles its own rAF internally)
-  w.cpuHistory.push(cpu.percent);
-  w.memHistory.push(mem.percent);
-  if (w.cpuHistory.length > HISTORY) w.cpuHistory.shift();
-  if (w.memHistory.length > HISTORY) w.memHistory.shift();
-  w.chart.data.datasets[0].data = [...w.cpuHistory];
-  w.chart.data.datasets[1].data = [...w.memHistory];
-  w.chart.update('none');
+  updateUsers(w, users, mem.total_mb);
+  const failed = snap.failed_jobs || [];
+  w.failed.textContent = failed.length
+    ? '⚠ Scheduled notebook failed: ' + failed.map(j => `${j.user} / ${j.job} (${new Date(j.at * 1000).toLocaleString()})`).join(', ')
+      + '. Open the -FAILED.ipynb next to the notebook.'
+    : '';
+  updateTotals();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// WebSocket connection
-// ─────────────────────────────────────────────────────────────────────────────
-const dot  = document.getElementById('status-dot');
-const stxt = document.getElementById('status-text');
-const sub  = document.getElementById('subtitle');
+function updateTotals() {
+  const all = Object.entries(workers).filter(([, w]) => w.snap);
+  const snaps = all.map(([, w]) => w.snap);
+  const n = snaps.length;
+  byId('no-workers').hidden = n > 0;
+  byId('t-workers').textContent = n;
+  byId('t-users').textContent = snaps.reduce((a, s) => a + (s.users || []).length, 0);
+  const cores = snaps.reduce((a, s) => a + s.cpu.core_count, 0);
+  const usedCores = snaps.reduce((a, s) => a + s.cpu.percent / 100 * s.cpu.core_count, 0);
+  const used = snaps.reduce((a, s) => a + s.memory.used_mb, 0), total = snaps.reduce((a, s) => a + s.memory.total_mb, 0);
+  const tile = (id, main, rest) => byId(id).replaceChildren(main, el('small', '', rest));
+  if (n) {
+    tile('t-cpu', (usedCores / cores * 100).toFixed(0) + '%', ` of ${cores} cores`);
+    tile('t-mem', (used / total * 100).toFixed(0) + '%', ` · ${fmtMB(used)} of ${fmtMB(total)}`);
+  } else {
+    byId('t-cpu').textContent = byId('t-mem').textContent = '–';
+  }
 
-function setConnected(yes) {
-  dot.className  = 'status-dot ' + (yes ? 'connected' : 'disconnected');
-  stxt.textContent = yes ? 'Connected — live data' : 'Reconnecting…';
+  const issues = [];
+  for (const [host, w] of all) {
+    const s = w.snap;
+    if (s.disk.percent >= 85) issues.push(`${host}: disk ${s.disk.percent.toFixed(0)}% full. New files and server starts fail at 100%.`);
+    if (s.memory.percent >= 90) issues.push(`${host}: memory ${s.memory.percent.toFixed(0)}% used.`);
+    for (const u of s.users || []) {
+      if (u.mem_limit_mb && u.mem_mb / u.mem_limit_mb >= 0.9) {
+        issues.push(`${u.name} on ${host}: memory at ${(u.mem_mb / u.mem_limit_mb * 100).toFixed(0)}% of the ${fmtMB(u.mem_limit_mb)} limit. Their kernel is killed at 100%.`);
+      }
+    }
+    for (const j of s.failed_jobs || []) issues.push(`${j.user} on ${host}: scheduled notebook "${j.job}" failed.`);
+  }
+  byId('attention').hidden = !issues.length;
+  byId('attention-list').replaceChildren(...issues.map(t => el('li', '', t)));
+}
+
+// ── Usage history (15 days, from the Hub's database) ─────────────────────────
+const base = location.pathname.replace(/\/$/, '');
+const hist = { user: '', days: 1, data: null };
+
+async function loadHistory(user, days) {
+  if (user != null) hist.user = user;
+  if (days != null) hist.days = days;
+  for (const b of document.querySelectorAll('[data-days]')) b.setAttribute('aria-pressed', String(+b.dataset.days === hist.days));
+  try {
+    const r = await fetch(`${base}/history?user=${encodeURIComponent(hist.user)}&days=${hist.days}`, { credentials: 'same-origin' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    hist.data = await r.json();
+  } catch (e) {
+    hist.data = null;
+    byId('h-empty').hidden = false;
+    byId('h-charts').hidden = true;
+    byId('h-empty').textContent = `Could not load the history (${e.message}).`;
+    return;
+  }
+  hist.user = hist.data.user;
+  renderHistory();
+}
+
+function renderHistory() {
+  const d = hist.data;
+  if (!d) return;
+  // Admins get the list of users with stored usage; everyone else sees only their own.
+  const sel = byId('h-user'), names = [...new Set([...d.users, d.user])].sort();
+  const pick = d.users.length > 0;
+  sel.hidden = byId('h-user-label').hidden = !pick;
+  byId('h-name').textContent = pick ? '' : d.user;
+  if (pick) {
+    sel.replaceChildren(...names.map(n => { const o = el('option', '', n); o.value = n; return o; }));
+    sel.value = d.user;
+  }
+  const pts = d.points;   // [ts, cpu_cores, mem_mb, mem_peak_mb, cpu_limit_pct, mem_limit_mb]
+  byId('h-empty').hidden = pts.length > 0;
+  byId('h-charts').hidden = !pts.length;
+  if (!pts.length) {
+    byId('h-empty').textContent = `Nothing stored for ${d.user} in the last ${d.days === 1 ? '24 hours' : d.days + ' days'}. `
+      + 'Usage is saved while their notebook server runs; the first point appears after 5 minutes.';
+    return;
+  }
+  const t1 = Date.now() / 1000, t0 = t1 - d.days * 86400, gap = d.step_s * 1.5;
+  const last = pts[pts.length - 1], cpuLimit = last[4], memLimit = last[5];
+  byId('h-cpu-limit').textContent = cpuLimit ? `Limit ${(cpuLimit / 100).toFixed(2)} cores` : 'No CPU limit';
+  byId('h-mem-limit').textContent = memLimit ? `Limit ${fmtMB(memLimit)}` : 'No memory limit';
+  drawChart(byId('h-cpu'), {
+    label: `CPU cores used by ${d.user}`, height: 170, t0, t1, gap, fmt: v => v.toFixed(2),
+    limit: cpuLimit ? { value: cpuLimit / 100, label: 'limit' } : null,
+    series: [{ name: 'cores, average', color: 'var(--series-1)', pts: pts.map(p => [p[0], p[1]]) }],
+  });
+  drawChart(byId('h-mem'), {
+    label: `Memory used by ${d.user}`, height: 170, t0, t1, gap, fmt: fmtMB,
+    limit: memLimit ? { value: memLimit, label: 'limit' } : null,
+    series: [
+      { name: 'average', color: 'var(--text-3)', pts: pts.map(p => [p[0], p[2]]), area: true },
+      { name: 'peak', color: 'var(--series-2)', pts: pts.map(p => [p[0], p[3]]) },
+    ],
+  });
+  if (byId('h-details').open) renderHistoryTable();
+}
+
+function renderHistoryTable() {
+  const head = el('tr');
+  for (const h of ['Time', 'CPU cores (average)', 'Memory (average)', 'Memory (peak)']) { const th = el('th', '', h); th.scope = 'col'; head.append(th); }
+  const thead = el('thead'), tbody = el('tbody');
+  thead.append(head);
+  for (const p of [...hist.data.points].reverse()) {
+    const tr = el('tr');
+    tr.append(el('td', 'num', new Date(p[0] * 1000).toLocaleString()), el('td', 'num', p[1].toFixed(2)),
+      el('td', 'num', fmtMB(p[2])), el('td', 'num', fmtMB(p[3])));
+    tbody.append(tr);
+  }
+  byId('h-table').replaceChildren(thead, tbody);
+}
+
+for (const b of document.querySelectorAll('[data-days]')) b.onclick = () => loadHistory(null, +b.dataset.days);
+byId('h-user').onchange = e => loadHistory(e.target.value);
+byId('h-details').ontoggle = () => { if (byId('h-details').open && hist.data) renderHistoryTable(); };
+new ResizeObserver(renderHistory).observe(byId('history'));
+setInterval(() => loadHistory(), 300000);   // a new point every 5 minutes
+loadHistory();
+
+// ── Live feed ────────────────────────────────────────────────────────────────
+function setConn(on) {
+  const c = byId('conn');
+  c.className = 'conn ' + (on ? 'on' : 'off');
+  c.lastElementChild.textContent = on ? 'Live, updates every 2 seconds' : 'Connection lost, retrying…';
 }
 
 function connect() {
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const path  = location.pathname.replace(/\/$/, '');
-  const wsUrl = `${proto}//${location.host}${path}/browser`;
-  const ws    = new WebSocket(wsUrl);
-
-  ws.onopen = () => {
-    setConnected(true);
-    sub.textContent = 'Real-time metrics from all connected Worker VMs — updates every 2 seconds';
-  };
-
-  ws.onmessage = (ev) => {
+  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}${base}/browser`);
+  ws.onopen = () => setConn(true);
+  ws.onmessage = ev => {
     let msg;
     try { msg = JSON.parse(ev.data); } catch { return; }
-
     if (msg.type === 'init') {
-      // Bulk init — all current snapshots
-      for (const [hostname, snap] of Object.entries(msg.workers)) {
-        updateCard(hostname, snap);
-      }
-      if (Object.keys(msg.workers).length === 0) {
-        document.getElementById('no-workers').style.display = '';
-      }
-      updateSummary();
+      for (const [host, snap] of Object.entries(msg.workers)) updateCard(host, snap);
+      updateTotals();
     } else if (msg.type === 'snapshot') {
       updateCard(msg.worker, msg.data);
-    } else if (msg.type === 'gone') {
-      // Agent disconnected: drop its card instead of showing stale numbers
-      const w = workers[msg.worker];
-      if (w) {
-        w.chart.destroy();
-        delete workers[msg.worker];
-        document.getElementById(`card-${CSS.escape(msg.worker)}`)?.remove();
-      }
-      updateSummary();
-      if (Object.keys(workers).length === 0) {
-        document.getElementById('no-workers').style.display = '';
-      }
+    } else if (msg.type === 'gone' && workers[msg.worker]) {
+      // Agent disconnected: drop its card instead of showing stale numbers.
+      workers[msg.worker].el.remove();
+      delete workers[msg.worker];
+      updateTotals();
     }
   };
-
-  ws.onclose = () => {
-    setConnected(false);
-    setTimeout(connect, 3000);
-  };
-
+  ws.onclose = () => { setConn(false); setTimeout(connect, 3000); };
   ws.onerror = () => ws.close();
 }
-
 connect();
 </script>
 </body>
