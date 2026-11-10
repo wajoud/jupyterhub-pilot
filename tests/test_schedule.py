@@ -115,3 +115,18 @@ def test_run_saves_result_and_marks_failures(tmp_path, fails, monkeypatch):
     assert schedule.run(str(nb), 5) == (1 if fails else 0)
     outs = [p for p in os.listdir(tmp_path) if p != "r.ipynb"]
     assert len(outs) == 1 and outs[0].endswith("-FAILED.ipynb") is fails
+
+
+def test_run_records_last_result_for_the_dashboard_and_delete_removes_it(home, monkeypatch):
+    tmp_path, nb = home
+    monkeypatch.setitem(sys.modules, "papermill", MagicMock(execute_notebook=MagicMock(side_effect=RuntimeError("boom"))))
+    assert schedule.run(nb, 5) == 1
+    last = tmp_path / "jobs" / "My_Report.last"
+    state, at = last.read_text().split()
+    assert state == "failed" and at.isdigit()
+
+    os.makedirs(tmp_path / "units")
+    (tmp_path / "units" / "jhp-My_Report.timer").write_text("")
+    with patch.object(schedule, "_systemctl", _ok):
+        schedule.control("delete", "My_Report")
+    assert not last.exists()

@@ -49,7 +49,8 @@ import hmac
 import json
 import logging
 import os
-from typing import Any, Callable, Dict, Optional, Set, Union
+import time
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 from jupyterhub.handlers import BaseHandler
 from tornado import web
@@ -68,6 +69,51 @@ _WORKER_SNAPSHOTS: Dict[str, Dict[str, Any]] = {}
 
 # All active browser WebSocket clients waiting for live updates.
 _BROWSER_CLIENTS: Set["BrowserWebSocketHandler"] = set()
+
+
+# Usage history: jupyterhub_config.py sets this to the SessionStore; None = history off.
+USAGE_STORE: Any = None
+_BUCKET_S = 300
+# Running sums for the current 5 minutes:
+# (username, worker) -> [cpu_sum, mem_sum, mem_peak, samples, cpu_limit_pct, mem_limit_mb]
+_USAGE_ACC: Dict[Tuple[str, str], List[Any]] = {}
+_USAGE_BUCKET: int = 0
+
+
+def _num(value: Any) -> float:
+    return float(value) if isinstance(value, (int, float)) else 0.0
+
+
+def record_usage(hostname: str, snapshot: Dict[str, Any], now: Optional[float] = None) -> None:
+    """Add *snapshot*'s user rows to the 5-minute averages; store them when the 5 minutes end."""
+    global _USAGE_BUCKET
+    if USAGE_STORE is None:
+        return
+    now = time.time() if now is None else now
+    bucket = int(now) // _BUCKET_S * _BUCKET_S
+    if bucket != _USAGE_BUCKET:
+        rows = [
+            (user, _USAGE_BUCKET, worker, a[0] / a[3], a[1] / a[3], a[2], a[4], a[5])
+            for (user, worker), a in _USAGE_ACC.items()
+        ]
+        _USAGE_ACC.clear()
+        _USAGE_BUCKET = bucket
+        if rows:
+            try:
+                USAGE_STORE.add_usage(rows, int(now))
+            except Exception as exc:  # noqa: BLE001  (history must never break live monitoring)
+                log.warning("MonitoringHandler: could not store usage history: %s", exc)
+    users = snapshot.get("users")
+    for u in users if isinstance(users, list) else []:
+        if not isinstance(u, dict) or not u.get("name"):
+            continue
+        a = _USAGE_ACC.setdefault((str(u["name"]), hostname), [0.0, 0.0, 0.0, 0, None, None])
+        mem = _num(u.get("mem_mb"))
+        a[0] += _num(u.get("cpu_cores"))
+        a[1] += mem
+        a[2] = max(a[2], mem)
+        a[3] += 1
+        a[4], a[5] = u.get("cpu_limit_pct"), u.get("mem_limit_mb")
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +169,7 @@ class AgentWebSocketHandler(WebSocketHandler):
         hostname = str(snapshot.get("hostname") or self.request.remote_ip)
         self.hostname = hostname
         _WORKER_SNAPSHOTS[hostname] = snapshot
+        record_usage(hostname, snapshot)
 
         _broadcast(snapshot, {"type": "snapshot", "worker": hostname, "data": snapshot})
 
@@ -190,11 +237,16 @@ class BrowserWebSocketHandler(BaseHandler, WebSocketHandler):
         return self._allowed_ips is None or snapshot.get("ip") in self._allowed_ips
 
     def view(self, snapshot: Dict[str, Any]) -> Dict[str, Any]:
-        """*snapshot* as this browser may see it: non-admins see only their own user row."""
+        """*snapshot* as this browser may see it: non-admins see only their own user row and failed jobs."""
         if self._allowed_ips is None:
             return snapshot
         me = self.current_user.name
-        return {**snapshot, "users": [u for u in snapshot.get("users", []) if u.get("name") == me]}
+        linux_me = me.split("@", 1)[0].lower()  # same mapping as the spawner's _os_username()
+        return {
+            **snapshot,
+            "users": [u for u in snapshot.get("users", []) if u.get("name") == me],
+            "failed_jobs": [j for j in snapshot.get("failed_jobs", []) if j.get("user") == linux_me],
+        }
 
     @web.authenticated
     async def get(self, *args: Any, **kwargs: Any) -> None:  # type: ignore[override]  # web.authenticated's typing
@@ -261,3 +313,94 @@ class MonitoringPageHandler(BaseHandler):
                 return
         self.set_header("Content-Type", "text/html; charset=utf-8")
         self.write(_DASHBOARD_HTML)
+
+
+# ---------------------------------------------------------------------------
+# Usage history  (the per-user graphs)
+# ---------------------------------------------------------------------------
+
+
+class UsageHistoryHandler(BaseHandler):
+    """``GET /monitoring/history?user=<name>&days=<1-15>``: a user's stored usage as JSON.
+
+    Users may read only their own history; admins anyone's (and get the list of users).
+    """
+
+    @web.authenticated
+    def get(self) -> None:
+        me = self.current_user
+        user = self.get_argument("user", "") or me.name
+        if user != me.name and not me.admin:
+            raise web.HTTPError(403, "You can only see your own usage.")
+        try:
+            days = min(max(int(self.get_argument("days", "1")), 1), 15)
+        except ValueError:
+            days = 1
+        # About 300-700 points whatever the range: 5-minute rows for a day, 30-minute averages for 15 days.
+        step = max(_BUCKET_S, days * 86400 // 700 // _BUCKET_S * _BUCKET_S)
+        store = USAGE_STORE
+        points = store.get_usage(user, int(time.time()) - days * 86400, step) if store else []
+        users = store.usage_users() if store and me.admin else []
+        self.set_header("Content-Type", "application/json")
+        self.write(json.dumps({"user": user, "days": days, "step_s": step, "points": points, "users": users}))
+
+
+# ---------------------------------------------------------------------------
+# Prometheus endpoint  (Grafana and other tools)
+# ---------------------------------------------------------------------------
+
+
+def _label(value: Any) -> str:
+    return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def prometheus_text(snapshots: Dict[str, Dict[str, Any]]) -> str:
+    """The latest snapshot of every worker in the Prometheus text format."""
+    metrics: Dict[str, List[str]] = {}
+
+    def add(name: str, labels: Dict[str, Any], value: Any) -> None:
+        if isinstance(value, (int, float)):
+            lab = ",".join(f'{k}="{_label(v)}"' for k, v in labels.items())
+            metrics.setdefault(name, []).append(f"jupyterhub_pilot_{name}{{{lab}}} {value}")
+
+    def part(d: Dict[str, Any], key: str) -> Dict[str, Any]:
+        value = d.get(key)
+        return value if isinstance(value, dict) else {}
+
+    for host, s in snapshots.items():
+        w = {"worker": host}
+        add("worker_cpu_percent", w, part(s, "cpu").get("percent"))
+        add("worker_memory_used_mb", w, part(s, "memory").get("used_mb"))
+        add("worker_memory_total_mb", w, part(s, "memory").get("total_mb"))
+        add("worker_disk_percent", w, part(s, "disk").get("percent"))
+        users = s.get("users")
+        for u in users if isinstance(users, list) else []:
+            if not isinstance(u, dict):
+                continue
+            wu = {**w, "user": u.get("name", "")}
+            add("user_cpu_cores", wu, u.get("cpu_cores"))
+            add("user_cpu_limit_cores", wu, u["cpu_limit_pct"] / 100 if isinstance(u.get("cpu_limit_pct"), (int, float)) else None)
+            add("user_memory_mb", wu, u.get("mem_mb"))
+            add("user_memory_limit_mb", wu, u.get("mem_limit_mb"))
+            add("user_kernels", wu, u.get("kernels"))
+    lines = []
+    for name, samples in metrics.items():
+        lines.append(f"# TYPE jupyterhub_pilot_{name} gauge")
+        lines.extend(samples)
+    return "\n".join(lines) + "\n"
+
+
+class PrometheusHandler(web.RequestHandler):
+    """``GET /monitoring/metrics`` for Prometheus/Grafana: ``Authorization: Bearer <JUPYTERPILOT_METRICS_TOKEN>``.
+
+    Off (403 for everyone) while that variable is unset. Its own token, so a
+    scraper cannot post as a worker agent.
+    """
+
+    def get(self) -> None:
+        expected = os.environ.get("JUPYTERPILOT_METRICS_TOKEN", "")
+        got = self.request.headers.get("Authorization", "")
+        if not expected or not hmac.compare_digest(got, f"Bearer {expected}"):
+            raise web.HTTPError(403)
+        self.set_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+        self.write(prometheus_text(_WORKER_SNAPSHOTS))

@@ -301,8 +301,22 @@ A **team** is a JupyterHub group whose name matches a key in `user_mapping.json`
 Rules:
 
 - A user with **no group** cannot start a server ("User has no groups assigned").
-- Keep each user in **one** team group. If a user is in several, the first group is used.
+- A user in **several** team groups is asked **Which team?** each time they start their server. The choice decides the worker, the RAM/CPU limit and the `team/` folder. Their files do not follow: each worker has its own `/home/<user>`.
 - **Make someone an admin:** add their username to `admin_users` in `hub_settings.json` and restart the Hub, or tick **Admin** on their user in the Admin panel.
+
+### Move a user to another team
+
+Notebooks live on the old team's worker, so copy them before the user starts on the new one:
+
+1. Stop the user's server (**Admin** → **Stop Server**).
+2. **Admin** → **Groups**: add the user to the new team group. They now get the **Which team?** choice; let them start once on the new team so their account exists on the new worker, then stop the server again.
+3. On the Hub, copy the notebooks from the old worker to the new one (the Hub's key opens both; files arrive owned by the user):
+   ```bash
+   KEY=/opt/jupyterhub-pilot/keys/worker
+   sudo ssh -i $KEY ubuntu@<OLD_WORKER_IP> "sudo tar -C /home/<user>/notebook -cz ." \
+     | sudo ssh -i $KEY <user>@<NEW_WORKER_IP> "tar -C notebook -xz"
+   ```
+4. Remove the user from the old team group. Their old Linux account stays on the old worker; remove it with `sudo pkill -u <user>; sudo userdel -r <user>` there once the copy is checked.
 
 ### Delete a user
 
@@ -378,6 +392,39 @@ It adds or updates the team in `/opt/jupyterhub-pilot/user_mapping.json`, loads 
 **4. Create the group** `team_beta` in **Admin** → **Groups** and add its users. They can start servers right away.
 
 To move a team to another VM: set up the new worker (step 2) and run `add-worker` with the same team name and the new IP. Users get the new VM the next time they start their server. Their notebook files stay on the old VM (`/home/<user>/notebook`); copy them over if needed.
+
+## Shared home folders (EFS)
+
+By default each user's files live on their team's worker disk (`/home/<user>`). With one shared filesystem mounted on every worker, a user has the same files on every worker: moving a user or a whole team to another worker needs no copying, a replaced worker loses nothing, and AWS Backup can back up every notebook in one place. Not yet tested on a cluster.
+
+1. **Create the filesystem:** AWS console → EFS → **Create file system**, in the workers' VPC. Its security group must allow **NFS (TCP 2049)** from the workers' security group. Copy its DNS name (`fs-0123abcd.efs.<region>.amazonaws.com`).
+2. **Mount it on every worker** (safe to run again; adds it to `/etc/fstab`):
+   ```bash
+   sudo jupyterhub-pilot mount-homes fs-0123abcd.efs.<region>.amazonaws.com      # mounts at /efs/home
+   ```
+3. **Tell the Hub**, once every worker is mounted:
+   ```bash
+   sudo jq '.home_base = "/efs/home"' /opt/jupyterhub-pilot/hub_settings.json | sudo tee /opt/jupyterhub-pilot/hub_settings.json.new >/dev/null \
+     && sudo mv /opt/jupyterhub-pilot/hub_settings.json.new /opt/jupyterhub-pilot/hub_settings.json
+   sudo systemctl restart jupyterhub
+   ```
+
+New users now get `/efs/home/<user>`, with the same Linux user ID on every worker (the Hub picks it), so file owners match everywhere.
+
+**Users who already have files** keep working on the worker's disk until you move them. For each one, with their server stopped, on their worker:
+
+```bash
+sudo rsync -a /home/<user>/ /efs/home/<user>/
+sudo pkill -u <user>; sudo userdel <user>        # the account only; /home/<user> stays as a backup
+```
+
+At their next start the Hub creates the account again, on the shared home, and hands the copied files to it. Remove `/home/<user>` once they have checked their notebooks.
+
+- If the filesystem is not mounted on a worker, servers there are refused ("The shared home folder is not mounted") instead of silently using the local disk.
+- The mount point cannot be `/home`: that would hide the admin user's SSH keys and lock the Hub out.
+- `/data/<team>` and `/data/shared` stay on each worker's own disk.
+- A scheduled notebook runs only on the worker where `%schedule add` was typed. Jobs made before 0.7.0 do not know their worker: run `%schedule delete <name>` and `%schedule add` again, or they run on every worker.
+- EFS is slower than a local disk for many small files (`git`, `pip install --user`, virtual environments).
 
 ## Remove a worker server
 
@@ -470,6 +517,7 @@ Run a notebook on a timer, with no browser or server open. It runs on the team's
 - **Restarts:** jobs live in the user's systemd timers on the worker (`~/.config/systemd/user/jhp-*`), so they survive Hub and worker restarts. A run missed while the worker was off runs when it comes back.
 - The limit and secrets are copied when you run `%schedule add`. After your limit or secrets change, run the same `add` again to update the job.
 - Deleting the user removes their jobs with their Linux account.
+- A job whose last run failed is listed on `/hub/monitoring` under its worker (the user sees their own, admins see all) until its next good run or `%schedule delete`.
 
 Admins, on a worker: every job is `sudo sh -c 'ls /home/*/.config/systemd/user/jhp-*.timer'`, and a user's run log is `sudo journalctl _UID=$(id -u <user>) --user-unit 'jhp-*'` (or `systemctl --user` as that user).
 
@@ -499,6 +547,10 @@ Open `https://hub.example.com/hub/monitoring` (or **Monitoring** in the Hub's na
 - Admins see every worker and every user's CPU, memory (against their limit), kernels and home-folder size. Other users see only their own team's workers and their own usage row.
 - A worker appears when its metrics agent connects with the right token and disappears when the agent stops.
 
+**History:** each user's CPU and memory are saved every 5 minutes while their server runs and kept for 15 days in the Hub's SQLite DB. The **Usage history** section at the bottom of the page graphs the last 24 hours, 7 days or 15 days; **History** on a user's row opens theirs. Users see their own history, admins anyone's.
+
+**Grafana / Prometheus:** set `JUPYTERPILOT_METRICS_TOKEN=<long random string>` in `/etc/jupyterhub-pilot/hub.env`, restart the Hub, and scrape `http://<HUB_PRIVATE_IP>:8000/hub/monitoring/metrics` with that bearer token ([Monitoring](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/MONITORING.md#grafana-and-prometheus) has the scrape config). The endpoint is off while the variable is unset.
+
 Agent status, on a worker: `sudo systemctl status jupyterhub_pilot-metrics`. More: [Monitoring](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/MONITORING.md).
 
 ## Configuration reference
@@ -518,6 +570,7 @@ Agent status, on a worker: `sudo systemctl status jupyterhub_pilot-metrics`. Mor
 | `db_path` | SQLite state DB |
 | `resource_limits` | `memory_max` (e.g. `"1G"`) and `cpu_quota` (e.g. `"50%"`) per notebook server; `null` turns limits off |
 | `terminals_enabled` | `false` removes the **Terminal** menu from every server started afterwards (default: on). For one user, use **Terminal off** on the Limits page. See [Terminal and JupyterLab](#terminal-and-jupyterlab) |
+| `home_base` | Folder holding the users' homes on every worker. Default `/home` (each worker's own disk); a shared mount such as `/efs/home` for [shared home folders](#shared-home-folders-efs) |
 | `on_user_delete` | What deleting a Hub user does on the worker: `"archive"` (default), `"delete"` or `"keep"`. See [Delete a user](#delete-a-user) |
 | `idle_cull` | `timeout` (seconds without activity before a server is stopped, default `10800` = 3 h) and `every` (how often to check, seconds); `null` or missing turns it off. See [Idle servers](#idle-servers-are-stopped-after-3-hours) |
 | `vault_enabled`, `vault_secret_path` | Per-user secrets from Vault; set-up walkthrough in [Security → Vault](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/SECURITY.md#4-vault-secret-injection) |

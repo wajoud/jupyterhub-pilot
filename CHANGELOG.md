@@ -2,6 +2,29 @@
 
 Each release says where to upgrade (**Hub**, **workers**, or both) and whether a restart is needed. Upgrade with `sudo jupyterhub-pilot upgrade` on each machine (README → Upgrading).
 
+## 0.7.0 (unreleased)
+
+**Upgrade: Hub and every worker** (workers only for the failed-runs list). Hub restart needed.
+
+Hub:
+- **Users in several teams choose one at start** ("Which team?" on the start page). One-team users see no change. Deleting such a user removes their account on every team's worker.
+- **The Hub renews its own Vault token** daily; drop the `vault-renew` cron job. Add the `auth/token/renew-self` path to the policy (`docs/SECURITY.md` §4, step 2).
+- Stop Server returns as soon as the server has exited (was always 5 s).
+- A slow Vault no longer freezes the Hub while a server starts.
+- After a worker reboot a server no longer shows as running because another program got its process number.
+- If a user's Linux account cannot be created, the start page says so (was an SSH login error).
+- Shared homes: the user's own group gets the same ID as the user on every worker; team-folder links work for users not yet moved.
+
+- **Shared home folders (EFS):** `home_base` in `hub_settings.json`; every user gets the same Linux user ID on every worker (README → Shared home folders).
+- **Monitoring page redesigned:** what needs attention first, compact worker cards, light and dark, no external scripts.
+- **15 days of per-user usage** (CPU, memory) stored in the state DB and graphed on the monitoring page.
+- **Prometheus endpoint** for Grafana: `/hub/monitoring/metrics`, off until `JUPYTERPILOT_METRICS_TOKEN` is set.
+
+Workers:
+- Scheduled notebooks whose last run failed are listed on `/hub/monitoring`.
+- `sudo jupyterhub-pilot mount-homes <efs-dns-name>` mounts the shared home filesystem.
+- A scheduled notebook now runs only on the worker where it was scheduled (matters with shared homes).
+
 ## 0.6.0 (unreleased)
 
 **Upgrade: Hub and every worker.** The Hub restart stops every running server; `upgrade` asks first.

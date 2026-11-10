@@ -15,6 +15,10 @@ Everything a JupyterHub-Pilot cluster can do, by where it runs: the **Hub** (one
 | Google login | Only accounts from your Google Workspace domain can log in; the user name is the part before `@` | `hosted_domain` in `hub_settings.json`, Google client in `hub.env` | 0.5.1 | — |
 | Test login | Log in with a shared password, no Google needed (testing only) | `JUPYTERPILOT_TEST_PASSWORD` + `JUPYTERPILOT_TEST_ADMIN_PASSWORD` in `hub.env` ([Option C](../README.md#option-c-test-login-no-google-testing-only)) | 0.5.1 | Tested |
 | Admins | Admins manage users, groups and limits, but cannot open other users' notebooks | `admin_users` in `hub_settings.json`, or the Admin page | 0.5.1 | Tested |
+| Several teams | A user in more than one team group picks the team (worker, limit, team folder) each time they start | Automatic: "Which team?" on the start page ([Add users and teams](../README.md#add-users-and-teams)) | 0.7.0 | Not yet |
+| Shared home folders | One filesystem (EFS) for every user's home on every worker: same files on any worker, one place to back up | `jupyterhub-pilot mount-homes`, `home_base` ([Shared home folders](../README.md#shared-home-folders-efs)) | 0.7.0 | Not yet |
+| Usage history | 15 days of each user's CPU and memory, graphed on the monitoring page | Automatic ([Monitoring](MONITORING.md#usage-history)) | 0.7.0 | Not yet |
+| Prometheus endpoint | Latest worker and user numbers for Grafana or any Prometheus scraper | `JUPYTERPILOT_METRICS_TOKEN` ([Monitoring](MONITORING.md#grafana-and-prometheus)) | 0.7.0 | Not yet |
 | No-team message | A user with no team gets "ask an admin to add you to a team" instead of an error page | Automatic | 0.5.1 | Tested |
 | Linux account per user | On first start the worker creates the user's own Linux account (`alice`), so users can't read each other's files | Automatic | 0.5.1 | Tested |
 | Delete a user cleans the worker | Deleting a Hub user removes their Linux account on the worker; their home is archived in `/home/.deleted/` (or deleted, or kept) | `on_user_delete` ([Delete a user](../README.md#delete-a-user)) | 0.6.0 | Not yet |

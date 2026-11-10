@@ -134,19 +134,17 @@ vault policy write jupyterhub-pilot - << 'POLICY'
 path "secret/data/jupyterhub-pilot/*" {
   capabilities = ["read"]
 }
+# Lets the Hub renew its own token (-no-default-policy below takes this away otherwise)
+path "auth/token/renew-self" {
+  capabilities = ["update"]
+}
 POLICY
 
 # Periodic token: lives as long as it is renewed within 32 days.
 vault token create -policy=jupyterhub-pilot -no-default-policy -orphan -period=768h -field=token
 ```
 
-The Hub does not renew the token itself. Renew it from a root cron job on the Hub, `/etc/cron.weekly/vault-renew` (`sudo chmod 755` it):
-
-```bash
-#!/bin/sh
-set -a; . /etc/jupyterhub-pilot/hub.env; set +a
-vault token renew > /dev/null
-```
+The Hub renews the token itself: at every start and then once a day (no cron job). If the Hub is off for more than 32 days, create a new token. A policy written before 0.7.0 lacks the `renew-self` path: run the `vault policy write` above again (existing tokens pick it up), otherwise the Hub log says `token renewal refused`.
 
 If the token expires, servers start without secrets and the Hub log says `permission denied reading secrets`.
 

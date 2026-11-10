@@ -37,6 +37,8 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
+import time
 from typing import Any, Dict
 
 import requests
@@ -79,6 +81,27 @@ class VaultClient:
     def is_configured(self) -> bool:
         """Return True if both VAULT_ADDR and VAULT_TOKEN are set."""
         return bool(self._addr and self._token)
+
+    def renew_self(self) -> bool:
+        """Renew the Hub's own token (a periodic token lives as long as it is renewed in time)."""
+        if not self.is_configured():
+            return False
+        try:
+            r = requests.post(
+                f"{self._addr}/v1/auth/token/renew-self",
+                headers={"X-Vault-Token": self._token},
+                timeout=_VAULT_TIMEOUT,
+            )
+        except requests.exceptions.RequestException as exc:
+            log.warning("VaultClient: token renewal failed: %s", exc)
+            return False
+        if not r.ok:
+            log.warning(
+                "VaultClient: token renewal refused (HTTP %d). The token's policy needs "
+                '`path "auth/token/renew-self" { capabilities = ["update"] }` (docs/SECURITY.md §4).',
+                r.status_code,
+            )
+        return r.ok
 
     def get_user_secrets(self, username: str) -> Dict[str, Any]:
         """
@@ -172,3 +195,17 @@ class VaultClient:
                 exc,
             )
             return {}
+
+
+def start_renewer(every: float = 86400.0) -> None:
+    """Renew the Hub's Vault token now and then daily, in a daemon thread (no cron job needed)."""
+    client = VaultClient()
+    if not client.is_configured():
+        return
+
+    def loop() -> None:
+        while True:
+            client.renew_self()
+            time.sleep(every)
+
+    threading.Thread(target=loop, name="vault-renew", daemon=True).start()
