@@ -1,6 +1,23 @@
 # Changelog
 
-Each release says where to upgrade (**Hub**, **workers**, or both) and whether a restart is needed. Upgrade with `sudo jupyterhub-pilot upgrade` on each machine (README → Upgrading).
+Each release says where to upgrade (**Hub**, **workers**, or both) and whether a restart is needed. Upgrade with `sudo jupyterhub-pilot upgrade` on each machine (Admin guide → Upgrading).
+
+## 0.8.0 (not released yet)
+
+**Upgrade: Hub and every worker** (workers for the GPU numbers and per-user process counts). Hub restart needed.
+
+Hub:
+- **Limits page redone:** every user with the limit they get and where it comes from (user, team or default), what their running server uses, and a mark when it is still on an older limit. Team limits are set on the same page. Saving a user's row with empty boxes now clears their limits (was an error).
+- **Monitoring page shows more:** worker cards titled with the team name, each worker's size, one bar per CPU core, the busiest users right now, GPU and fullest-disk totals, what the memory limits on a worker add up to.
+- **Usage history:** a "1 hour" range (a new cluster no longer looks empty), totals for the chosen period, and a **Most active users** table for admins.
+- Prometheus: GPU gauges (`worker_gpu_*`, `user_gpu_memory_mb`).
+- `install-hub` installs `nodejs` and `npm` without the recommended extras (340+ fewer packages).
+
+Docs:
+- The README is now a short overview with screenshots. Its how-to sections moved to `docs/ADMIN.md` (install, teams, workers, limits, upgrades, troubleshooting), `docs/USING.md` (notebooks) and `docs/DEVELOPMENT.md`.
+
+Workers:
+- **GPU workers:** the metrics agent reports NVIDIA GPUs (usage, memory, temperature, memory per user) where `nvidia-smi` exists. `install-worker` installs the driver only on a machine with a GPU (Ubuntu) and asks for a reboot. Workers without a GPU are unchanged.
 
 ## 0.7.0 (2026-11-10)
 
@@ -17,7 +34,7 @@ Hub:
 - If a user's Linux account cannot be created, the start page says so (was an SSH login error).
 - Shared homes: the user's own group gets the same ID as the user on every worker; team-folder links work for users not yet moved.
 
-- **Shared home folders (EFS):** `home_base` in `hub_settings.json`; every user gets the same Linux user ID on every worker (README → Shared home folders).
+- **Shared home folders (EFS):** `home_base` in `hub_settings.json`; every user gets the same Linux user ID on every worker (Admin guide → Shared home folders).
 - **Monitoring page redesigned:** what needs attention first, compact worker cards, light and dark, no external scripts.
 - **15 days of per-user usage** (CPU, memory) stored in the state DB and graphed on the monitoring page.
 - **Prometheus endpoint** for Grafana: `/hub/monitoring/metrics`, off until `JUPYTERPILOT_METRICS_TOKEN` is set.

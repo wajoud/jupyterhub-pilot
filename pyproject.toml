@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "jupyterhub-pilot"
 version = "0.7.0"
 description = "Agentic AI coding partner for JupyterHub and IPython"
-readme = {file = "PYPI.md", content-type = "text/markdown"}  # short page for PyPI; README.md is the full guide
+readme = {file = "PYPI.md", content-type = "text/markdown"}  # short page for PyPI; the guides are in docs/
 requires-python = ">=3.9"
 license = {file = "LICENSE"}
 authors = [
@@ -95,6 +95,7 @@ dev = [
     "types-requests",
     "types-paramiko",
     "tornado",        # needed by test_config.py → jupyterhub_config → monitoring_handler
+    "jinja2",         # test_pages.py renders the Limits template
 ]
 
 [tool.setuptools.packages.find]

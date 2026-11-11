@@ -432,6 +432,26 @@ class SessionStore:
         ).fetchall()
         return [list(r) for r in rows]
 
+    def top_usage(self, since: int, limit: int = 10) -> List[List[Any]]:
+        """[[username, core_hours, mem_peak_mb, hours_running, worker], ...], most CPU first."""
+        rows = self._get_read_conn().execute(
+            "SELECT username, SUM(cpu_cores) / 12.0, MAX(mem_peak_mb), COUNT(*) / 12.0, MAX(worker) "  # 12 rows an hour
+            "FROM user_usage WHERE ts >= ? GROUP BY username ORDER BY 2 DESC LIMIT ?",
+            (since, limit),
+        ).fetchall()
+        return [list(r) for r in rows]
+
+    def teams_for_ip(self, ip: str) -> List[str]:
+        """Teams whose worker is *ip* (the monitoring page shows them on the worker's card); [] on any error."""
+        try:
+            rows = self._get_read_conn().execute(
+                "SELECT team FROM team_mappings WHERE server_ip = ? ORDER BY team", (ip,)
+            ).fetchall()
+            return [r[0] for r in rows]
+        except Exception:  # noqa: BLE001  (a label must never break live monitoring)
+            self._read_conn = None
+            return []
+
     def usage_users(self) -> List[str]:
         """Every user with stored usage (for the admin's user picker)."""
         rows = self._get_read_conn().execute("SELECT DISTINCT username FROM user_usage ORDER BY username")

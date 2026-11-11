@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 470" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">How JupyterHub-Pilot works</title>
+  <desc id="d">A browser reaches the Hub VM over HTTPS. The Hub starts each user's notebook server over SSH on their team's worker VM. Each worker sends live metrics back to the Hub.</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#52514e"/></marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#14875e"/></marker>
+  </defs>
+  <rect width="860" height="470" rx="12" fill="#fcfcfb" stroke="#dedcd6"/>
+
+  <!-- Browser -->
+  <rect x="330" y="20" width="200" height="44" rx="8" fill="#ffffff" stroke="#75736d"/>
+  <text x="430" y="47" text-anchor="middle" font-size="15" fill="#0b0b0b">Browser</text>
+  <line x1="430" y1="64" x2="430" y2="100" stroke="#52514e" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="442" y="87" font-size="12" fill="#52514e">HTTPS</text>
+
+  <!-- Hub VM -->
+  <rect x="150" y="102" width="560" height="128" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="170" y="127" font-size="15" font-weight="650" fill="#0b0b0b">Hub VM</text>
+  <text x="690" y="127" text-anchor="end" font-size="12" fill="#52514e">one, always on</text>
+  <g font-size="13" fill="#0b0b0b" text-anchor="middle">
+    <rect x="170" y="142" width="120" height="68" rx="6" fill="#ffffff" stroke="#2a78d6"/>
+    <text x="230" y="171">Caddy</text><text x="230" y="189" font-size="11" fill="#52514e">HTTPS</text>
+    <rect x="304" y="142" width="120" height="68" rx="6" fill="#ffffff" stroke="#2a78d6"/>
+    <text x="364" y="171">JupyterHub</text><text x="364" y="189" font-size="11" fill="#52514e">Google login</text>
+    <rect x="438" y="142" width="120" height="68" rx="6" fill="#ffffff" stroke="#2a78d6"/>
+    <text x="498" y="171">Team routing</text><text x="498" y="189" font-size="11" fill="#52514e">SQLite state</text>
+    <rect x="572" y="142" width="120" height="68" rx="6" fill="#ffffff" stroke="#2a78d6"/>
+    <text x="632" y="171">Monitoring</text><text x="632" y="189" font-size="11" fill="#52514e">and Limits pages</text>
+  </g>
+
+  <!-- Arrows Hub <-> workers -->
+  <line x1="300" y1="230" x2="230" y2="298" stroke="#52514e" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="150" y="262" font-size="12" fill="#52514e">SSH: start alice's server</text>
+  <line x1="560" y1="230" x2="630" y2="298" stroke="#52514e" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="608" y="262" font-size="12" fill="#52514e">SSH: start dave's server</text>
+  <line x1="330" y1="298" x2="390" y2="232" stroke="#14875e" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#g)"/>
+  <line x1="530" y1="298" x2="470" y2="232" stroke="#14875e" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#g)"/>
+  <text x="430" y="286" text-anchor="middle" font-size="12" fill="#14875e">live metrics</text>
+
+  <!-- Workers -->
+  <g font-size="13" fill="#0b0b0b">
+    <rect x="40" y="300" width="370" height="150" rx="10" fill="#e8f6f0" stroke="#1baf7a" stroke-width="1.5"/>
+    <text x="60" y="325" font-size="15" font-weight="650">Worker VM: team_alpha</text>
+    <text x="390" y="325" text-anchor="end" font-size="12" fill="#52514e">no GPU</text>
+    <rect x="60" y="340" width="160" height="42" rx="6" fill="#ffffff" stroke="#1baf7a"/>
+    <text x="140" y="358" text-anchor="middle">alice's notebooks</text><text x="140" y="374" text-anchor="middle" font-size="11" fill="#52514e">own Linux user · 4G, 2 cores</text>
+    <rect x="230" y="340" width="160" height="42" rx="6" fill="#ffffff" stroke="#1baf7a"/>
+    <text x="310" y="358" text-anchor="middle">bob's notebooks</text><text x="310" y="374" text-anchor="middle" font-size="11" fill="#52514e">own Linux user · 8G, 2 cores</text>
+    <text x="60" y="410" font-size="12" fill="#52514e">Team folder · AI magics · scheduled notebooks</text>
+    <text x="60" y="430" font-size="12" fill="#52514e">Metrics agent</text>
+
+    <rect x="450" y="300" width="370" height="150" rx="10" fill="#e8f6f0" stroke="#1baf7a" stroke-width="1.5"/>
+    <text x="470" y="325" font-size="15" font-weight="650">Worker VM: team_beta</text>
+    <text x="800" y="325" text-anchor="end" font-size="12" fill="#52514e">with a GPU</text>
+    <rect x="470" y="340" width="160" height="42" rx="6" fill="#ffffff" stroke="#1baf7a"/>
+    <text x="550" y="358" text-anchor="middle">dave's notebooks</text><text x="550" y="374" text-anchor="middle" font-size="11" fill="#52514e">own Linux user · 16G, 4 cores</text>
+    <rect x="640" y="340" width="160" height="42" rx="6" fill="#ffffff" stroke="#1baf7a"/>
+    <text x="720" y="358" text-anchor="middle">erin's notebooks</text><text x="720" y="374" text-anchor="middle" font-size="11" fill="#52514e">own Linux user · 16G, 4 cores</text>
+    <text x="470" y="410" font-size="12" fill="#52514e">Team folder · AI magics · scheduled notebooks</text>
+    <text x="470" y="430" font-size="12" fill="#52514e">Metrics agent</text>
+  </g>
+</svg>

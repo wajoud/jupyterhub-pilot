@@ -43,7 +43,9 @@ class FakeProc:
 def _clean():
     ma._PROC_CACHE.clear()
     ma._HOME_BYTES.clear()
+    ma._GPU.update(gpus=[], proc_mb={})
     yield
+    ma._GPU.update(gpus=[], proc_mb={})
     ma._PROC_CACHE.clear()
 
 
@@ -98,3 +100,36 @@ def test_failed_jobs_lists_only_failed_and_never_follows_symlinks(tmp_path, monk
     ]
     monkeypatch.setattr(ma.pwd, "getpwall", lambda: accounts)
     assert ma._failed_jobs() == [{"user": "alice", "job": "report", "at": 1762650000}]
+
+
+def test_gpus_are_read_from_nvidia_smi_and_added_up_per_server(monkeypatch):
+    out = {
+        "gpu": "0, Tesla T4, 37, 5900, 15360, 54\n1, Tesla T4, [N/A], 0, 15360, [N/A]\n",
+        "compute-apps": "11, 4000\n11, 900\n99, [N/A]\n",
+    }
+    monkeypatch.setattr(ma.subprocess, "run", lambda cmd, **kw: SimpleNamespace(
+        returncode=0, stdout=out[cmd[1].split("=")[0].replace("--query-", "")], stderr=""))
+    ma._GPU.update(ma._read_gpus())
+    assert ma._GPU["gpus"][0] == {
+        "index": 0, "name": "Tesla T4", "percent": 37.0, "mem_used_mb": 5900.0, "mem_total_mb": 15360.0, "temp_c": 54.0}
+    assert ma._GPU["gpus"][1]["percent"] is None
+
+    kernel = FakeProc(11, "python -m ipykernel_launcher")
+    server = FakeProc(10, "jupyterhub-singleuser", env={"JUPYTERHUB_USER": "alice"}, children=[kernel])
+    monkeypatch.setattr(ma.psutil, "process_iter", lambda attrs=None: [server, kernel])
+    monkeypatch.setattr(ma, "_cgroup_limits", lambda pid: {"mem_mb": None, "mem_limit_mb": None, "cpu_limit_pct": None})
+    assert ma._collect_users(4)[0]["gpu_mem_mb"] == 4900.0
+
+
+def test_no_gpu_means_no_gpu_numbers(monkeypatch):
+    server = FakeProc(10, "jupyterhub-singleuser")
+    monkeypatch.setattr(ma.psutil, "process_iter", lambda attrs=None: [server])
+    monkeypatch.setattr(ma, "_cgroup_limits", lambda pid: {"mem_mb": None, "mem_limit_mb": None, "cpu_limit_pct": None})
+    assert ma._collect_users(4)[0]["gpu_mem_mb"] is None
+
+    def broken(cmd, **kw):
+        return SimpleNamespace(returncode=9, stdout="", stderr="NVIDIA-SMI has failed")
+
+    monkeypatch.setattr(ma.subprocess, "run", broken)
+    with pytest.raises(OSError):
+        ma._read_gpus()

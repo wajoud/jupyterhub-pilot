@@ -17,7 +17,7 @@
     --text-3:    #75736d;
     --link:      #1f5fb0;
     --series-1:  #2a78d6;   /* CPU */
-    --series-2:  #eb6834;   /* memory */
+    --series-2:  #1baf7a;   /* memory */
     --good:      #0ca30c;
     --warning:   #fab219;
     --critical:  #d03b3b;
@@ -36,7 +36,7 @@
       --text-3:    #96958c;
       --link:      #7db2f2;
       --series-1:  #3987e5;
-      --series-2:  #d95926;
+      --series-2:  #199e70;
     }
   }
 
@@ -68,11 +68,22 @@
   #attention ul { margin: 6px 0 0; padding-left: 20px; color: var(--text-2); }
 
   /* ── Totals ── */
-  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
   .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; }
   .tile-label { color: var(--text-2); font-size: 12px; }
   .tile-value { font-size: 22px; font-weight: 650; margin-top: 2px; }
   .tile-value small { font-size: 13px; font-weight: 400; color: var(--text-2); }
+  .tile-sub { color: var(--text-3); font-size: 11px; margin-top: 4px; min-height: 16px; overflow-wrap: anywhere; }
+  .tile .bar { margin-top: 8px; }
+
+  /* ── Busiest right now ── */
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 8px 32px; }
+  .rank { list-style: none; margin: 6px 0 0; padding: 0; }
+  .rank li { display: grid; grid-template-columns: minmax(0, 150px) 1fr auto; gap: 10px; align-items: center; padding: 5px 0; }
+  .rank .who { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rank .bar { margin: 0; }
+  .rank .bar > i { background: var(--k); }
+  .rank .num { font-size: 12px; text-align: right; min-width: 130px; }
 
   /* ── Worker cards ── */
   #workers { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 540px), 1fr)); gap: 16px; }
@@ -85,7 +96,12 @@
   .pill.warn::before { content: '▲ '; color: var(--warning); }
   .pill.crit::before { content: '■ '; color: var(--critical); }
 
-  .meters { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 14px; }
+  .card-size { color: var(--text-2); font-size: 12px; margin-top: 4px; }
+  .meters { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 16px; margin-top: 14px; }
+  /* One bar per CPU core */
+  .cores { display: flex; align-items: flex-end; gap: 2px; height: 18px; margin-top: 6px; border-bottom: 1px solid var(--border); }
+  .cores i { flex: 1; max-width: 12px; min-height: 1px; background: var(--series-1); border-radius: 2px 2px 0 0; transition: height .5s; }
+  .card:not(.has-gpu) .gpu-col { display: none; }
   .meter-top { display: flex; justify-content: space-between; align-items: baseline; }
   .meter-label { color: var(--text-2); font-size: 12px; }
   .meter-value { font-size: 18px; font-weight: 650; }
@@ -108,7 +124,8 @@
   td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
   tr:last-child td { border-bottom: 0; }
   td.num, td .num { white-space: nowrap; }
-  td.user { font-weight: 600; max-width: 170px; overflow-wrap: anywhere; }
+  td.user { font-weight: 600; min-width: 90px; max-width: 170px; overflow-wrap: anywhere; }
+  td .sub { white-space: nowrap; }
   .sub { color: var(--text-3); font-size: 11px; font-weight: 400; }
   td .bar { height: 4px; min-width: 70px; }
   .empty { color: var(--text-3); padding: 8px 0 0; }
@@ -149,6 +166,8 @@
     header, main { padding-left: 16px; padding-right: 16px; }
     .tiles { grid-template-columns: repeat(2, 1fr); }
     .meters { grid-template-columns: 1fr; gap: 10px; }
+    .rank li { grid-template-columns: minmax(0, 90px) 1fr auto; }
+    .rank .num { min-width: 0; }
     .hide-narrow { display: none; }
   }
 </style>
@@ -168,10 +187,20 @@
   </section>
 
   <section class="tiles" aria-label="Totals">
-    <div class="tile"><div class="tile-label">Workers online</div><div class="tile-value num" id="t-workers">–</div></div>
-    <div class="tile"><div class="tile-label">Notebook servers running</div><div class="tile-value num" id="t-users">–</div></div>
-    <div class="tile"><div class="tile-label">CPU in use, all workers</div><div class="tile-value num" id="t-cpu">–</div></div>
-    <div class="tile"><div class="tile-label">Memory in use, all workers</div><div class="tile-value num" id="t-mem">–</div></div>
+    <div class="tile"><div class="tile-label">Workers online</div><div class="tile-value num" id="t-workers">–</div><div class="tile-sub" id="t-workers-sub"></div></div>
+    <div class="tile"><div class="tile-label">Notebook servers running</div><div class="tile-value num" id="t-users">–</div><div class="tile-sub" id="t-users-sub"></div></div>
+    <div class="tile"><div class="tile-label">CPU in use, all workers</div><div class="tile-value num" id="t-cpu">–</div><div class="bar"><i id="t-cpu-bar"></i></div><div class="tile-sub" id="t-cpu-sub"></div></div>
+    <div class="tile"><div class="tile-label">Memory in use, all workers</div><div class="tile-value num" id="t-mem">–</div><div class="bar"><i id="t-mem-bar"></i></div><div class="tile-sub" id="t-mem-sub"></div></div>
+    <div class="tile" id="t-gpu-tile" hidden><div class="tile-label">GPU memory in use</div><div class="tile-value num" id="t-gpu">–</div><div class="bar"><i id="t-gpu-bar"></i></div><div class="tile-sub" id="t-gpu-sub"></div></div>
+    <div class="tile"><div class="tile-label">Fullest disk</div><div class="tile-value num" id="t-disk">–</div><div class="bar"><i id="t-disk-bar"></i></div><div class="tile-sub" id="t-disk-sub"></div></div>
+  </section>
+
+  <section class="card" id="busy" aria-labelledby="busy-h" hidden>
+    <h2 id="busy-h" style="font-size:15px">Busiest right now</h2>
+    <div class="cols">
+      <div><div class="chart-title"><b>CPU</b><span>bar: share of their limit</span></div><ol class="rank" id="busy-cpu" style="--k:var(--series-1)"></ol></div>
+      <div><div class="chart-title"><b>Memory</b><span>bar: share of their limit</span></div><ol class="rank" id="busy-mem" style="--k:var(--series-2)"></ol></div>
+    </div>
   </section>
 
   <section class="card" id="no-workers" hidden>
@@ -187,17 +216,26 @@
 
   <section class="card" id="history" aria-labelledby="history-h">
     <h2 id="history-h" style="font-size:15px">Usage history</h2>
-    <p class="sub" style="font-size:12px">Saved every 5 minutes while a notebook server runs, kept for 15 days.</p>
+    <p class="sub" style="font-size:12px">Saved every 5 minutes while a notebook server runs, kept for 15 days. A new user appears after their server has run for 5 minutes.</p>
     <div class="controls">
+      <span class="spacer" style="color:var(--text-2)">Show the last</span>
+      <button type="button" data-hours="1" aria-pressed="false">1 hour</button>
+      <button type="button" data-hours="24" aria-pressed="true">24 hours</button>
+      <button type="button" data-hours="168" aria-pressed="false">7 days</button>
+      <button type="button" data-hours="360" aria-pressed="false">15 days</button>
+    </div>
+    <div id="h-top" hidden>
+      <div class="chart-title"><b>Most active users</b><span>1 core-hour = one CPU core fully busy for an hour</span></div>
+      <div class="table-wrap"><table id="h-top-table"></table></div>
+    </div>
+    <div class="controls" style="margin-top:18px">
       <label for="h-user" id="h-user-label" hidden>User</label>
       <select id="h-user" hidden></select>
-      <b id="h-name" class="spacer"></b>
-      <button type="button" data-days="1" aria-pressed="true">24 hours</button>
-      <button type="button" data-days="7" aria-pressed="false">7 days</button>
-      <button type="button" data-days="15" aria-pressed="false">15 days</button>
+      <b id="h-name"></b>
     </div>
     <p class="empty" id="h-empty" hidden></p>
     <div id="h-charts">
+      <div class="tiles" id="h-stats" style="margin-top:12px"></div>
       <div class="chart-title"><b>CPU cores in use</b><span class="key" style="--k:var(--series-1)">Average</span><span id="h-cpu-limit"></span></div>
       <div class="chart" id="h-cpu"></div>
       <div class="chart-title"><b>Memory</b><span class="key" style="--k:var(--series-2)">Peak</span><span class="key" style="--k:var(--text-3)">Average</span><span id="h-mem-limit"></span></div>
@@ -330,6 +368,9 @@ function drawChart(box, cfg) {
 const workers = {};          // hostname -> card state
 const LIVE_SAMPLES = 150;    // 5 minutes at one sample every 2 s
 
+// Card title: the team(s) this worker serves when the Hub knows them, else the hostname.
+const labelOf = (host, snap) => snap.teams && snap.teams.length ? snap.teams.join(' + ') : host;
+
 function meter(label) {
   const root = el('div'), top = el('div', 'meter-top'), value = el('span', 'meter-value num', '–');
   const bar = el('div', 'bar'), fill = el('i'), sub = el('div', 'meter-sub');
@@ -337,8 +378,8 @@ function meter(label) {
   bar.append(fill);
   root.append(top, bar, sub);
   return { root, set(pct, subText, lvl) {
-    value.textContent = pct.toFixed(0) + '%';
-    fill.style.width = Math.min(pct, 100) + '%';
+    value.textContent = pct == null ? '–' : pct.toFixed(0) + '%';
+    fill.style.width = Math.min(pct || 0, 100) + '%';
     fill.className = lvl;
     sub.textContent = subText;
   } };
@@ -350,11 +391,17 @@ function createCard(host) {
   const head = el('div', 'card-head');
   w.meta = el('span', 'card-meta num');
   w.pill = el('span', 'pill', 'Healthy');
-  head.append(el('h2', '', host), w.meta, w.pill);
+  w.title = el('h2', '', host);
+  head.append(w.title, w.meta, w.pill);
+  w.size = el('div', 'card-size');
 
   const meters = el('div', 'meters');
-  w.mCpu = meter('CPU'); w.mMem = meter('Memory'); w.mDisk = meter('Disk');
-  meters.append(w.mCpu.root, w.mMem.root, w.mDisk.root);
+  w.mCpu = meter('CPU'); w.mMem = meter('Memory'); w.mDisk = meter('Disk'); w.mGpu = meter('GPU');
+  w.cores = el('div', 'cores');
+  w.cores.setAttribute('role', 'img');
+  w.mCpu.root.append(w.cores);
+  w.mGpu.root.hidden = true;   // shown when the worker reports a GPU
+  meters.append(w.mCpu.root, w.mMem.root, w.mDisk.root, w.mGpu.root);
 
   const liveTitle = el('div', 'section-title');
   w.kCpu = el('b'); w.kMem = el('b');
@@ -367,9 +414,10 @@ function createCard(host) {
 
   const usersTitle = el('div', 'section-title');
   w.usersLabel = el('b', '', 'Notebook servers');
-  usersTitle.append(w.usersLabel);
+  w.promised = el('span');
+  usersTitle.append(w.usersLabel, w.promised);
   const wrap = el('div', 'table-wrap'), table = el('table'), thead = el('thead'), tr = el('tr');
-  for (const [name, cls] of [['User'], ['CPU'], ['Memory'], ['Kernels'], ['Home', 'hide-narrow'], ['Running', 'hide-narrow'], ['']]) {
+  for (const [name, cls] of [['User'], ['CPU'], ['Memory'], ['GPU memory', 'gpu-col'], ['Kernels'], ['Home', 'hide-narrow'], ['']]) {
     const th = el('th', cls, name); th.scope = 'col'; tr.append(th);
   }
   thead.append(tr);
@@ -381,7 +429,7 @@ function createCard(host) {
   w.failed = el('div', 'failed');
   w.failed.setAttribute('role', 'status');
 
-  w.el.append(head, meters, liveTitle, w.live, usersTitle, wrap, w.noUsers, w.failed);
+  w.el.append(head, w.size, meters, liveTitle, w.live, usersTitle, wrap, w.noUsers, w.failed);
   byId('workers').append(w.el);
   return workers[host] = w;
 }
@@ -401,7 +449,11 @@ function userRow(w, name) {
   r.as = el('div', 'sub');
   user.append(name, r.as);
   r.cpu = usage(cell()); r.mem = usage(cell());
-  r.kernels = cell('num'); r.home = cell('num hide-narrow'); r.up = cell('num hide-narrow');
+  r.gpu = cell('num gpu-col');
+  const k = cell('num');
+  r.kernels = el('div'); r.procs = el('div', 'sub');
+  k.append(r.kernels, r.procs);
+  r.home = cell('num hide-narrow');
   const btn = el('button', '', 'History');
   btn.type = 'button';
   btn.setAttribute('aria-label', `Usage history of ${name}`);
@@ -425,16 +477,20 @@ function updateUsers(w, users, workerMemMb) {
       u.cpu_limit_pct ? cores * 100 / u.cpu_limit_pct * 100 : u.cpu_percent || 0);
     const cap = u.mem_limit_mb || workerMemMb;
     r.mem(fmtMB(u.mem_mb || 0), u.mem_limit_mb ? `of ${fmtMB(u.mem_limit_mb)} limit` : 'no limit', cap ? u.mem_mb / cap * 100 : 0);
-    r.as.textContent = u.linux_user && u.linux_user !== name ? `as ${u.linux_user}` : '';
+    r.as.textContent = (u.linux_user && u.linux_user !== name ? `as ${u.linux_user} · ` : '') + `up ${fmtDur(u.uptime_s)}`;
     r.kernels.textContent = u.kernels ?? '–';
+    r.procs.textContent = u.processes ? `${u.processes} processes` : '';
+    r.gpu.textContent = u.gpu_mem_mb ? fmtMB(u.gpu_mem_mb) : '–';
     r.home.textContent = u.home_bytes == null ? '–' : fmtMB(u.home_bytes / 1048576);
-    r.up.textContent = fmtDur(u.uptime_s);
     w.tbody.append(r.tr);   // keeps the agent's order (most memory first) without rebuilding rows
   }
   for (const [name, r] of w.rows) if (!seen.has(name)) { r.tr.remove(); w.rows.delete(name); }
   w.table.hidden = !users.length;
   w.noUsers.hidden = !!users.length;
   w.usersLabel.textContent = `Notebook servers (${users.length})`;
+  // What the worker has promised: if every server filled its limit at once, would it fit?
+  const limited = users.filter(u => u.mem_limit_mb), sum = limited.reduce((a, u) => a + u.mem_limit_mb, 0);
+  w.promised.textContent = limited.length > 1 ? `Memory limits add up to ${fmtMB(sum)} of ${fmtMB(workerMemMb)}` : '';
 }
 
 function updateCard(host, snap) {
@@ -443,8 +499,15 @@ function updateCard(host, snap) {
   const { cpu, memory: mem, disk, network: net } = snap;
   const users = snap.users || [];
 
-  w.meta.textContent = [snap.ip, `${cpu.core_count} cores`, snap.uptime_s != null ? `up ${fmtDur(snap.uptime_s)}` : null].filter(Boolean).join(' · ');
-  const worst = [level(cpu.percent), level(mem.percent), level(disk.percent, 80, 90)];
+  const gpus = snap.gpus || [], name = labelOf(host, snap);
+  w.title.textContent = name;
+  w.meta.textContent = [name === host ? null : host, snap.ip, snap.uptime_s != null ? `up ${fmtDur(snap.uptime_s)}` : null].filter(Boolean).join(' · ');
+  const models = {};
+  for (const g of gpus) models[g.name] = (models[g.name] || 0) + 1;
+  w.size.textContent = [`${cpu.core_count} cores`, `${fmtMB(mem.total_mb)} RAM`, `${Math.round(disk.total_gb)} GB disk`,
+    gpus.length ? 'GPU ' + Object.entries(models).map(([m, n]) => (n > 1 ? n + '× ' : '') + m).join(', ') : 'no GPU'].join(' · ');
+  const gpuUsed = gpus.reduce((a, g) => a + (g.mem_used_mb || 0), 0), gpuTotal = gpus.reduce((a, g) => a + (g.mem_total_mb || 0), 0);
+  const worst = [level(cpu.percent), level(mem.percent), level(disk.percent, 80, 90), level(gpuTotal ? gpuUsed / gpuTotal * 100 : 0)];
   const lvl = worst.includes('crit') ? 'crit' : worst.includes('warn') ? 'warn' : '';
   w.pill.className = 'pill ' + lvl;
   w.pill.textContent = lvl === 'crit' ? 'Critical' : lvl === 'warn' ? 'Busy' : 'Healthy';
@@ -453,6 +516,17 @@ function updateCard(host, snap) {
   w.mCpu.set(cpu.percent, load, worst[0]);
   w.mMem.set(mem.percent, `${fmtMB(mem.used_mb)} of ${fmtMB(mem.total_mb)}`, worst[1]);
   w.mDisk.set(disk.percent, `${disk.used_gb} of ${disk.total_gb} GB`, worst[2]);
+  w.el.classList.toggle('has-gpu', gpus.length > 0);
+  w.mGpu.root.hidden = !gpus.length;
+  if (gpus.length) {
+    const busy = gpus.filter(g => g.percent != null), temp = Math.max(...gpus.map(g => g.temp_c ?? -1));
+    w.mGpu.set(busy.length ? busy.reduce((a, g) => a + g.percent, 0) / busy.length : null,
+      `${fmtMB(gpuUsed)} of ${fmtMB(gpuTotal)}` + (temp >= 0 ? ` · ${temp}°C` : ''), worst[3]);
+  }
+  const perCore = (cpu.per_core || []).slice(0, 64);
+  while (w.cores.children.length < perCore.length) w.cores.append(el('i'));
+  perCore.forEach((p, i) => { w.cores.children[i].style.height = Math.max(p, 4) + '%'; w.cores.children[i].title = `Core ${i + 1}: ${p.toFixed(0)}%`; });
+  w.cores.setAttribute('aria-label', 'Each core: ' + perCore.map(p => p.toFixed(0) + '%').join(', '));
 
   w.cpu.push([snap.timestamp, cpu.percent]);
   w.mem.push([snap.timestamp, mem.percent]);
@@ -461,7 +535,7 @@ function updateCard(host, snap) {
   w.kMem.textContent = mem.percent.toFixed(0) + '%';
   w.net.textContent = `↑ ${fmtRate(net.upload_kbps)}  ↓ ${fmtRate(net.download_kbps)}`;
   drawChart(w.live, {
-    label: `CPU and memory of ${host}, last 5 minutes`, height: 56, compact: true, yMax: 100,
+    label: `CPU and memory of ${name}, last 5 minutes`, height: 56, compact: true, yMax: 100,
     t0: snap.timestamp - LIVE_SAMPLES * 2, t1: snap.timestamp, gap: 10, fmt: v => v.toFixed(0) + '%',
     series: [{ name: 'CPU', color: 'var(--series-1)', pts: w.cpu }, { name: 'Memory', color: 'var(--series-2)', pts: w.mem }],
   });
@@ -475,29 +549,79 @@ function updateCard(host, snap) {
   updateTotals();
 }
 
+function setTile(id, main, small, sub, pct, lvl) {
+  byId(id).replaceChildren(main, el('small', '', small || ''));
+  byId(id + '-sub').textContent = sub || '';
+  const bar = byId(id + '-bar');
+  if (bar) { bar.style.width = Math.min(pct || 0, 100) + '%'; bar.className = lvl || ''; }
+}
+
+function rankList(id, rows) {
+  // rows: [{name, where, pct, text}], already sorted; the bar is the share of the user's own limit.
+  byId(id).replaceChildren(...rows.slice(0, 5).map(r => {
+    const li = el('li'), who = el('div', 'who', r.name), bar = el('div', 'bar'), fill = el('i');
+    who.title = `${r.name} on ${r.where}`;
+    fill.style.width = Math.max(1, Math.min(r.pct, 100)) + '%';
+    bar.append(fill);
+    li.append(who, bar, el('div', 'num', r.text));
+    return li;
+  }));
+}
+
 function updateTotals() {
   const all = Object.entries(workers).filter(([, w]) => w.snap);
   const snaps = all.map(([, w]) => w.snap);
   const n = snaps.length;
+  const users = all.flatMap(([host, w]) => (w.snap.users || []).map(u => ({ u, s: w.snap, where: labelOf(host, w.snap) })));
   byId('no-workers').hidden = n > 0;
   byId('t-workers').textContent = n;
-  byId('t-users').textContent = snaps.reduce((a, s) => a + (s.users || []).length, 0);
   const cores = snaps.reduce((a, s) => a + s.cpu.core_count, 0);
   const usedCores = snaps.reduce((a, s) => a + s.cpu.percent / 100 * s.cpu.core_count, 0);
   const used = snaps.reduce((a, s) => a + s.memory.used_mb, 0), total = snaps.reduce((a, s) => a + s.memory.total_mb, 0);
-  const tile = (id, main, rest) => byId(id).replaceChildren(main, el('small', '', rest));
+  const gpus = snaps.flatMap(s => s.gpus || []);
+  byId('t-workers-sub').textContent = n ? `${cores} cores · ${fmtMB(total)} RAM` + (gpus.length ? ` · ${gpus.length} GPU` : '') : '';
+  byId('t-users').textContent = users.length;
+  byId('t-users-sub').textContent = users.length ? `${users.reduce((a, x) => a + (x.u.kernels || 0), 0)} kernels open` : '';
+  byId('t-gpu-tile').hidden = !gpus.length;
   if (n) {
-    tile('t-cpu', (usedCores / cores * 100).toFixed(0) + '%', ` of ${cores} cores`);
-    tile('t-mem', (used / total * 100).toFixed(0) + '%', ` · ${fmtMB(used)} of ${fmtMB(total)}`);
+    const cpuPct = usedCores / cores * 100, memPct = used / total * 100;
+    setTile('t-cpu', cpuPct.toFixed(0) + '%', '', `${usedCores.toFixed(1)} of ${cores} cores`, cpuPct, level(cpuPct));
+    setTile('t-mem', memPct.toFixed(0) + '%', '', `${fmtMB(used)} of ${fmtMB(total)}`, memPct, level(memPct));
+    const [host, w] = all.reduce((a, b) => b[1].snap.disk.percent > a[1].snap.disk.percent ? b : a);
+    const d = w.snap.disk;
+    setTile('t-disk', d.percent.toFixed(0) + '%', '', `${labelOf(host, w.snap)} · ${d.used_gb} of ${d.total_gb} GB`, d.percent, level(d.percent, 80, 90));
+    if (gpus.length) {
+      const gu = gpus.reduce((a, g) => a + (g.mem_used_mb || 0), 0), gt = gpus.reduce((a, g) => a + (g.mem_total_mb || 0), 0);
+      const gp = gt ? gu / gt * 100 : 0;
+      setTile('t-gpu', gp.toFixed(0) + '%', '', `${fmtMB(gu)} of ${fmtMB(gt)}`, gp, level(gp));
+    }
   } else {
-    byId('t-cpu').textContent = byId('t-mem').textContent = '–';
+    for (const id of ['t-cpu', 't-mem', 't-disk']) setTile(id, '–');
+  }
+
+  // Busiest right now: needs someone to compare with (a normal user sees only their own row).
+  byId('busy').hidden = users.length < 2;
+  if (users.length >= 2) {
+    rankList('busy-cpu', [...users].sort((a, b) => (b.u.cpu_cores || 0) - (a.u.cpu_cores || 0)).map(({ u, where }) => ({
+      name: String(u.name), where,
+      pct: u.cpu_limit_pct ? (u.cpu_cores || 0) * 100 / u.cpu_limit_pct * 100 : u.cpu_percent || 0,
+      text: fmtCores(u.cpu_cores || 0) + (u.cpu_limit_pct ? ` of ${(u.cpu_limit_pct / 100).toFixed(2)}` : ''),
+    })));
+    rankList('busy-mem', [...users].sort((a, b) => (b.u.mem_mb || 0) - (a.u.mem_mb || 0)).map(({ u, s, where }) => ({
+      name: String(u.name), where,
+      pct: (u.mem_mb || 0) / (u.mem_limit_mb || s.memory.total_mb) * 100,
+      text: fmtMB(u.mem_mb || 0) + (u.mem_limit_mb ? ` of ${fmtMB(u.mem_limit_mb)}` : ''),
+    })));
   }
 
   const issues = [];
-  for (const [host, w] of all) {
-    const s = w.snap;
+  for (const [h, w] of all) {
+    const s = w.snap, host = labelOf(h, s);
     if (s.disk.percent >= 85) issues.push(`${host}: disk ${s.disk.percent.toFixed(0)}% full. New files and server starts fail at 100%.`);
     if (s.memory.percent >= 90) issues.push(`${host}: memory ${s.memory.percent.toFixed(0)}% used.`);
+    for (const g of s.gpus || []) {
+      if (g.mem_total_mb && g.mem_used_mb / g.mem_total_mb >= 0.9) issues.push(`${host}: GPU ${g.index} memory ${(g.mem_used_mb / g.mem_total_mb * 100).toFixed(0)}% used. New GPU work fails with "out of memory".`);
+    }
     for (const u of s.users || []) {
       if (u.mem_limit_mb && u.mem_mb / u.mem_limit_mb >= 0.9) {
         issues.push(`${u.name} on ${host}: memory at ${(u.mem_mb / u.mem_limit_mb * 100).toFixed(0)}% of the ${fmtMB(u.mem_limit_mb)} limit. Their kernel is killed at 100%.`);
@@ -511,14 +635,16 @@ function updateTotals() {
 
 // ── Usage history (15 days, from the Hub's database) ─────────────────────────
 const base = location.pathname.replace(/\/$/, '');
-const hist = { user: '', days: 1, data: null };
+const hist = { user: '', hours: 24, data: null };
+const rangeName = () => hist.hours === 1 ? 'hour' : hist.hours === 24 ? '24 hours' : hist.hours / 24 + ' days';
 
-async function loadHistory(user, days) {
+async function loadHistory(user, hours) {
   if (user != null) hist.user = user;
-  if (days != null) hist.days = days;
-  for (const b of document.querySelectorAll('[data-days]')) b.setAttribute('aria-pressed', String(+b.dataset.days === hist.days));
+  if (hours != null) hist.hours = hours;
+  for (const b of document.querySelectorAll('[data-hours]')) b.setAttribute('aria-pressed', String(+b.dataset.hours === hist.hours));
   try {
-    const r = await fetch(`${base}/history?user=${encodeURIComponent(hist.user)}&days=${hist.days}`, { credentials: 'same-origin' });
+    const range = hist.hours === 1 ? 'hours=1' : `days=${hist.hours / 24}`;
+    const r = await fetch(`${base}/history?user=${encodeURIComponent(hist.user)}&${range}`, { credentials: 'same-origin' });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     hist.data = await r.json();
   } catch (e) {
@@ -544,16 +670,29 @@ function renderHistory() {
     sel.replaceChildren(...names.map(n => { const o = el('option', '', n); o.value = n; return o; }));
     sel.value = d.user;
   }
+  renderTop(d.top || []);
   const pts = d.points;   // [ts, cpu_cores, mem_mb, mem_peak_mb, cpu_limit_pct, mem_limit_mb]
   byId('h-empty').hidden = pts.length > 0;
   byId('h-charts').hidden = !pts.length;
   if (!pts.length) {
-    byId('h-empty').textContent = `Nothing stored for ${d.user} in the last ${d.days === 1 ? '24 hours' : d.days + ' days'}. `
+    byId('h-empty').textContent = `Nothing stored for ${d.user} in the last ${rangeName()}. `
       + 'Usage is saved while their notebook server runs; the first point appears after 5 minutes.';
     return;
   }
-  const t1 = Date.now() / 1000, t0 = t1 - d.days * 86400, gap = d.step_s * 1.5;
+  const t1 = Date.now() / 1000, t0 = t1 - d.span_s, gap = d.step_s * 1.5;
   const last = pts[pts.length - 1], cpuLimit = last[4], memLimit = last[5];
+  const avgCpu = pts.reduce((a, p) => a + p[1], 0) / pts.length, maxCpu = Math.max(...pts.map(p => p[1]));
+  const peakMem = Math.max(...pts.map(p => p[3]));
+  byId('h-stats').replaceChildren(...[
+    ['Server running', fmtDur(pts.length * d.step_s), `of the last ${rangeName()}`],
+    ['CPU, average', fmtCores(avgCpu), cpuLimit ? `${(avgCpu * 100 / cpuLimit * 100).toFixed(0)}% of the limit` : 'no limit'],
+    ['CPU, busiest', fmtCores(maxCpu), cpuLimit ? `${(maxCpu * 100 / cpuLimit * 100).toFixed(0)}% of the limit` : 'no limit'],
+    ['Memory, peak', fmtMB(peakMem), memLimit ? `${(peakMem / memLimit * 100).toFixed(0)}% of the ${fmtMB(memLimit)} limit` : 'no limit'],
+  ].map(([label, value, sub]) => {
+    const t = el('div', 'tile');
+    t.append(el('div', 'tile-label', label), el('div', 'tile-value num', value), el('div', 'tile-sub', sub));
+    return t;
+  }));
   byId('h-cpu-limit').textContent = cpuLimit ? `Limit ${(cpuLimit / 100).toFixed(2)} cores` : 'No CPU limit';
   byId('h-mem-limit').textContent = memLimit ? `Limit ${fmtMB(memLimit)}` : 'No memory limit';
   drawChart(byId('h-cpu'), {
@@ -572,6 +711,31 @@ function renderHistory() {
   if (byId('h-details').open) renderHistoryTable();
 }
 
+// Admins: who used the most CPU in the chosen period. The bar compares users with each other.
+function renderTop(top) {   // [[user, core_hours, mem_peak_mb, hours_running, worker]]
+  byId('h-top').hidden = !top.length;
+  if (!top.length) return;
+  const head = el('tr'), thead = el('thead'), tbody = el('tbody'), max = Math.max(...top.map(r => r[1]), 0.001);
+  for (const [h, cls] of [['User'], ['CPU core-hours'], ['Memory, peak'], ['Server running', 'hide-narrow'], ['Worker', 'hide-narrow'], ['']]) { const th = el('th', cls, h); th.scope = 'col'; head.append(th); }
+  thead.append(head);
+  for (const [user, coreHours, peak, hours, worker] of top) {
+    const tr = el('tr'), cpu = el('td'), bar = el('div', 'bar'), fill = el('i'), btn = el('button', '', 'History');
+    fill.style.width = Math.max(1, coreHours / max * 100) + '%';
+    fill.style.background = 'var(--series-1)';
+    bar.append(fill);
+    cpu.append(el('div', 'num', coreHours.toFixed(coreHours < 10 ? 2 : 0)), bar);
+    btn.type = 'button';
+    btn.setAttribute('aria-label', `Usage history of ${user}`);
+    btn.onclick = () => loadHistory(user);
+    const last = el('td');
+    last.append(btn);
+    tr.append(el('td', 'user', user), cpu, el('td', 'num', fmtMB(peak || 0)), el('td', 'num hide-narrow', fmtDur(hours * 3600)),
+      el('td', 'hide-narrow', worker || '–'), last);
+    tbody.append(tr);
+  }
+  byId('h-top-table').replaceChildren(thead, tbody);
+}
+
 function renderHistoryTable() {
   const head = el('tr');
   for (const h of ['Time', 'CPU cores (average)', 'Memory (average)', 'Memory (peak)']) { const th = el('th', '', h); th.scope = 'col'; head.append(th); }
@@ -586,7 +750,7 @@ function renderHistoryTable() {
   byId('h-table').replaceChildren(thead, tbody);
 }
 
-for (const b of document.querySelectorAll('[data-days]')) b.onclick = () => loadHistory(null, +b.dataset.days);
+for (const b of document.querySelectorAll('[data-hours]')) b.onclick = () => loadHistory(null, +b.dataset.hours);
 byId('h-user').onchange = e => loadHistory(e.target.value);
 byId('h-details').ontoggle = () => { if (byId('h-details').open && hist.data) renderHistoryTable(); };
 new ResizeObserver(renderHistory).observe(byId('history'));

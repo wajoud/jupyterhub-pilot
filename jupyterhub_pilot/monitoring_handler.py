@@ -166,6 +166,8 @@ class AgentWebSocketHandler(WebSocketHandler):
         # the worker's private IP, which is what the team mapping holds.
         # (remote_ip honours the proxy's X-Forwarded-For: the Hub runs with xheaders.)
         snapshot["ip"] = self.request.remote_ip
+        # Team names for the card title; the agent only knows its hostname.
+        snapshot["teams"] = USAGE_STORE.teams_for_ip(snapshot["ip"]) if USAGE_STORE else []
         hostname = str(snapshot.get("hostname") or self.request.remote_ip)
         self.hostname = hostname
         _WORKER_SNAPSHOTS[hostname] = snapshot
@@ -321,9 +323,10 @@ class MonitoringPageHandler(BaseHandler):
 
 
 class UsageHistoryHandler(BaseHandler):
-    """``GET /monitoring/history?user=<name>&days=<1-15>``: a user's stored usage as JSON.
+    """``GET /monitoring/history?user=<name>&days=<1-15>`` (or ``&hours=1``): a user's stored usage as JSON.
 
-    Users may read only their own history; admins anyone's (and get the list of users).
+    Users may read only their own history; admins anyone's, plus the list of users
+    and the most active users of the same period (``top``).
     """
 
     @web.authenticated
@@ -336,13 +339,20 @@ class UsageHistoryHandler(BaseHandler):
             days = min(max(int(self.get_argument("days", "1")), 1), 15)
         except ValueError:
             days = 1
+        span = days * 86400
+        if self.get_argument("hours", "") == "1":  # the one range shorter than a day
+            span = 3600
         # About 300-700 points whatever the range: 5-minute rows for a day, 30-minute averages for 15 days.
-        step = max(_BUCKET_S, days * 86400 // 700 // _BUCKET_S * _BUCKET_S)
+        step = max(_BUCKET_S, span // 700 // _BUCKET_S * _BUCKET_S)
         store = USAGE_STORE
-        points = store.get_usage(user, int(time.time()) - days * 86400, step) if store else []
+        since = int(time.time()) - span
+        points = store.get_usage(user, since, step) if store else []
         users = store.usage_users() if store and me.admin else []
+        top = store.top_usage(since) if store and me.admin else []
         self.set_header("Content-Type", "application/json")
-        self.write(json.dumps({"user": user, "days": days, "step_s": step, "points": points, "users": users}))
+        self.write(json.dumps({
+            "user": user, "days": days, "span_s": span, "step_s": step, "points": points, "users": users, "top": top,
+        }))
 
 
 # ---------------------------------------------------------------------------
@@ -373,6 +383,14 @@ def prometheus_text(snapshots: Dict[str, Dict[str, Any]]) -> str:
         add("worker_memory_used_mb", w, part(s, "memory").get("used_mb"))
         add("worker_memory_total_mb", w, part(s, "memory").get("total_mb"))
         add("worker_disk_percent", w, part(s, "disk").get("percent"))
+        gpus = s.get("gpus")
+        for g in gpus if isinstance(gpus, list) else []:
+            if not isinstance(g, dict):
+                continue
+            wg = {**w, "gpu": g.get("index", ""), "model": g.get("name", "")}
+            add("worker_gpu_percent", wg, g.get("percent"))
+            add("worker_gpu_memory_used_mb", wg, g.get("mem_used_mb"))
+            add("worker_gpu_memory_total_mb", wg, g.get("mem_total_mb"))
         users = s.get("users")
         for u in users if isinstance(users, list) else []:
             if not isinstance(u, dict):
@@ -383,6 +401,7 @@ def prometheus_text(snapshots: Dict[str, Dict[str, Any]]) -> str:
             add("user_memory_mb", wu, u.get("mem_mb"))
             add("user_memory_limit_mb", wu, u.get("mem_limit_mb"))
             add("user_kernels", wu, u.get("kernels"))
+            add("user_gpu_memory_mb", wu, u.get("gpu_mem_mb"))
     lines = []
     for name, samples in metrics.items():
         lines.append(f"# TYPE jupyterhub_pilot_{name} gauge")

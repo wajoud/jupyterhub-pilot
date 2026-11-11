@@ -70,7 +70,10 @@ async def test_spawner_uses_user_then_team_then_default(store, monkeypatch):
 
 def _handler(store, admin=True, **form):
     h = limits.LimitsPageHandler()
-    h.initialize(store)
+    h.initialize(store, worker_ip_for_group={"team_alpha": "10.0.1.5"}.get)
+    h._hub_users = lambda: [("bob", {"team_alpha": {"memory_max": "3G"}})]
+    h._hub_groups = lambda: [("team_alpha", {"memory_max": "3G"}, 1)]
+    h._save_team = MagicMock(return_value=True)
     h.current_user = MagicMock(admin=admin)
     h.get_body_argument = lambda k, default=None: form.get(k, default)
     h.render_template = AsyncMock(return_value="html")
@@ -123,11 +126,48 @@ async def test_page_saving_limits_without_the_box_turns_terminal_back_on(store):
 
 
 @pytest.mark.anyio
-async def test_page_refuses_empty_save(store):
-    h = _handler(store, username="bob")
-    await limits.LimitsPageHandler.post.__wrapped__(h)
-    assert "Terminal off" in h.render_template.call_args.kwargs["error"]
+async def test_page_empty_save_clears_the_user(store):
+    store.set_user_limits("bob", "2G", None)
+    await limits.LimitsPageHandler.post.__wrapped__(_handler(store, username="bob"))
     assert store.get_user_limits("bob") is None
+
+
+@pytest.mark.anyio
+async def test_page_saves_team_limits_and_refuses_a_group_without_a_worker(store):
+    h = _handler(store, action="team", team="team_alpha", memory_max="4G", cpu_quota="")
+    await limits.LimitsPageHandler.post.__wrapped__(h)
+    h._save_team.assert_called_with("team_alpha", {"memory_max": "4G", "cpu_quota": None})
+
+    h = _handler(store, action="team", team="admins", memory_max="4G")
+    await limits.LimitsPageHandler.post.__wrapped__(h)
+    h._save_team.assert_not_called()
+    h.set_status.assert_called_with(400)
+
+    h = _handler(store, action="team", team="team_alpha", memory_max="lots")
+    await limits.LimitsPageHandler.post.__wrapped__(h)
+    h._save_team.assert_not_called()
+
+
+def test_view_shows_every_user_with_the_limit_that_applies_and_where_from():
+    snapshots = {"w1": {
+        "ip": "10.0.1.5", "cpu": {"core_count": 4}, "memory": {"total_mb": 16384}, "gpus": [{"name": "Tesla T4"}],
+        "users": [{"name": "bob", "mem_mb": 512, "mem_limit_mb": 1024, "cpu_limit_pct": 50}],
+    }}
+    view = limits.build_view(
+        users=[("alice", {}), ("bob", {"team_alpha": {"memory_max": "3G"}, "admins": {}})],
+        groups=[("admins", {}, 1), ("team_alpha", {"memory_max": "3G"}, 1)],
+        overrides=[{"username": "bob", "memory_max": None, "cpu_quota": "300%", "terminals_off": 1},
+                   {"username": "carol", "memory_max": "2G", "cpu_quota": None, "terminals_off": 0}],
+        default=DEFAULT, worker_ip_for_group={"team_alpha": "10.0.1.5"}.get, snapshots=snapshots,
+    )
+    assert [t["name"] for t in view["teams"]] == ["team_alpha"]  # "admins" has no worker
+    assert view["teams"][0]["worker"] == "4 cores · 16.0 GB RAM · GPU Tesla T4"
+    alice, bob, carol = view["users"]
+    assert (alice["memory_max_now"], alice["memory_max_from"], alice["running"]) == ("1G", "default", None)
+    assert (bob["memory_max_now"], bob["memory_max_from"]) == ("3G", "team team_alpha")
+    assert (bob["cpu_quota_now"], bob["cpu_quota_from"], bob["terminals_off"]) == ("300%", "set here", True)
+    assert bob["running"]["memory"] == "512 MB of 1.0 GB" and bob["running"]["old_limit"]  # started before the change
+    assert (carol["known"], carol["memory_max"]) == (False, "2G")  # set before her first login
 
 
 def test_old_user_limits_table_gets_terminals_off_column(tmp_path):

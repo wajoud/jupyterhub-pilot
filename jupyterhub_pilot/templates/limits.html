@@ -1,68 +1,136 @@
-{# Admin page for per-user RAM/CPU limits (jupyterhub_pilot/limits.py). #}
+{# Admin page for RAM/CPU limits per team and per user (jupyterhub_pilot/limits.py). #}
 {% extends "page.html" %}
 {% block main %}
 <div class="container">
-  <h1>RAM, CPU and terminal per user</h1>
-  <p>
-    Each value is taken from the first place that sets it: the user (this page),
-    their team (<a href="{{ base_url }}admin#/groups">Admin → Groups</a> → the team → properties
-    <code>memory_max</code> / <code>cpu_quota</code>), then <code>resource_limits</code> in
-    <code>hub_settings.json</code>. <b>Terminal off</b> removes New → Terminal for that user;
-    <code>terminals_enabled: false</code> in <code>hub_settings.json</code> turns it off for everyone.
-    Saving a user replaces all three of their settings. Changes apply on the user's next server start.
+  <h1>Limits</h1>
+  <p class="text-muted">
+    Each server gets the first value that is set: the <b>user's</b>, then their <b>team's</b>, then the
+    <b>default</b> ({{ default.memory_max }} memory, {{ default.cpu_quota }} CPU; <code>resource_limits</code> in
+    <code>hub_settings.json</code>). Memory looks like <code>512M</code> or <code>2G</code>; CPU like
+    <code>50%</code> (half a core) or <code>200%</code> (two cores). Leave a box empty to use the next one in line.
+    A change applies on the user's next server start.
   </p>
   {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
   {% if message %}<div class="alert alert-success" role="status">{{ message }}</div>{% endif %}
 
-  <form method="post" class="row g-2 align-items-end mb-4">
-    <input type="hidden" name="_xsrf" value="{{ xsrf_token }}" />
-    <div class="col-sm-3">
-      <label for="username" class="form-label">User</label>
-      <input id="username" name="username" class="form-control" required />
-    </div>
-    <div class="col-sm-3">
-      <label for="memory_max" class="form-label">memory_max</label>
-      <input id="memory_max" name="memory_max" class="form-control" placeholder="2G" />
-    </div>
-    <div class="col-sm-2">
-      <label for="cpu_quota" class="form-label">cpu_quota</label>
-      <input id="cpu_quota" name="cpu_quota" class="form-control" placeholder="100%" />
-    </div>
-    <div class="col-sm-2">
-      <div class="form-check mb-2">
-        <input id="terminals_off" name="terminals_off" type="checkbox" class="form-check-input" />
-        <label for="terminals_off" class="form-check-label">Terminal off</label>
-      </div>
-    </div>
-    <div class="col-sm-2">
-      <button type="submit" class="btn btn-primary w-100">Save</button>
-    </div>
-  </form>
-
-  <h2 class="h4">Per-user settings</h2>
-  {% if overrides %}
-  <table class="table">
-    <thead><tr><th scope="col">User</th><th scope="col">memory_max</th><th scope="col">cpu_quota</th><th scope="col">Terminal</th><th scope="col"></th></tr></thead>
+  <h2 class="h4 mt-4">Teams</h2>
+  {% if teams %}
+  <div class="table-responsive">
+  <table class="table align-middle">
+    <thead><tr>
+      <th scope="col">Team</th><th scope="col">Worker</th><th scope="col">Members</th>
+      <th scope="col">Memory</th><th scope="col">CPU</th><th scope="col"></th>
+    </tr></thead>
     <tbody>
-    {% for row in overrides %}
+    {% for t in teams %}
       <tr>
-        <td>{{ row.username }}</td>
-        <td>{{ row.memory_max or "(team / default)" }}</td>
-        <td>{{ row.cpu_quota or "(team / default)" }}</td>
-        <td>{{ "off" if row.terminals_off else "(Hub setting)" }}</td>
+        <td><b>{{ t.name }}</b></td>
+        <td>{{ t.worker }}<div class="small text-muted">{{ t.ip }} · {{ t.servers }} running</div></td>
+        <td>{{ t.members }}</td>
+        <td><input form="t{{ loop.index }}" name="memory_max" value="{{ t.memory_max }}" placeholder="{{ t.memory_max_default }} (default)" aria-label="Memory limit of {{ t.name }}" class="form-control form-control-sm" style="max-width:11em" /></td>
+        <td><input form="t{{ loop.index }}" name="cpu_quota" value="{{ t.cpu_quota }}" placeholder="{{ t.cpu_quota_default }} (default)" aria-label="CPU limit of {{ t.name }}" class="form-control form-control-sm" style="max-width:11em" /></td>
         <td>
-          <form method="post">
+          <form id="t{{ loop.index }}" method="post">
             <input type="hidden" name="_xsrf" value="{{ xsrf_token }}" />
-            <input type="hidden" name="username" value="{{ row.username }}" />
-            <button type="submit" name="action" value="clear" class="btn btn-sm btn-outline-danger">Clear</button>
+            <input type="hidden" name="team" value="{{ t.name }}" />
+            <button type="submit" name="action" value="team" class="btn btn-sm btn-primary">Save</button>
           </form>
         </td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}
-  <p>None. Every user gets their team's or the default limit, and the Hub's terminal setting.</p>
+  <p>No team yet. A team is a group with a worker: <code>sudo jupyterhub-pilot add-worker &lt;team&gt; &lt;ip&gt;</code> on the Hub,
+    then create the group in <a href="{{ base_url }}admin#/groups">Admin → Groups</a>.</p>
   {% endif %}
+
+  <h2 class="h4 mt-4">Users</h2>
+  {% if users %}
+  <div class="table-responsive">
+  <table class="table align-middle">
+    <thead><tr>
+      <th scope="col">User</th><th scope="col">Gets now</th><th scope="col">Running server</th>
+      <th scope="col">Memory</th><th scope="col">CPU</th><th scope="col">Terminal</th><th scope="col"></th>
+    </tr></thead>
+    <tbody>
+    {% for u in users %}
+      <tr>
+        <td>
+          <b>{{ u.username }}</b>
+          <div class="small text-muted">
+            {% if not u.known %}has not logged in yet{% elif u.teams %}{{ u.teams | join(", ") }}{% else %}no team{% endif %}
+          </div>
+        </td>
+        <td>
+          {{ u.memory_max_now }} <span class="small text-muted">{{ u.memory_max_from }}</span><br />
+          {{ u.cpu_quota_now }} <span class="small text-muted">{{ u.cpu_quota_from }}</span>
+          {% if u.teams | length > 1 %}<div class="small text-muted">with {{ u.teams[0] }}; follows the team they pick</div>{% endif %}
+        </td>
+        <td>
+          {% if u.running %}
+            {{ u.running.memory }}
+            {% if u.running.percent is not none %}
+            <div class="progress" style="height:4px;max-width:12em" role="progressbar" aria-label="Memory used by {{ u.username }}" aria-valuenow="{{ u.running.percent }}" aria-valuemin="0" aria-valuemax="100">
+              <div class="progress-bar{% if u.running.percent >= 90 %} bg-danger{% endif %}" style="width:{{ u.running.percent }}%"></div>
+            </div>
+            {% endif %}
+            <div class="small text-muted">{{ u.running.cpu }}</div>
+            {% if u.running.old_limit %}<div class="small text-warning-emphasis">▲ still on the old limit until they restart</div>{% endif %}
+          {% else %}<span class="text-muted">stopped</span>{% endif %}
+        </td>
+        <td><input form="u{{ loop.index }}" name="memory_max" value="{{ u.memory_max }}" placeholder="{{ u.memory_max_now }}" aria-label="Memory limit of {{ u.username }}" class="form-control form-control-sm" style="max-width:8em" /></td>
+        <td><input form="u{{ loop.index }}" name="cpu_quota" value="{{ u.cpu_quota }}" placeholder="{{ u.cpu_quota_now }}" aria-label="CPU limit of {{ u.username }}" class="form-control form-control-sm" style="max-width:8em" /></td>
+        <td>
+          <div class="form-check">
+            <input form="u{{ loop.index }}" id="term{{ loop.index }}" name="terminals_off" type="checkbox" class="form-check-input"{% if u.terminals_off %} checked{% endif %} />
+            <label for="term{{ loop.index }}" class="form-check-label">off</label>
+          </div>
+        </td>
+        <td class="text-nowrap">
+          <form id="u{{ loop.index }}" method="post">
+            <input type="hidden" name="_xsrf" value="{{ xsrf_token }}" />
+            <input type="hidden" name="username" value="{{ u.username }}" />
+            <button type="submit" name="action" value="set" class="btn btn-sm btn-primary">Save</button>
+            {% if u.has_override %}<button type="submit" name="action" value="clear" class="btn btn-sm btn-outline-danger">Clear</button>{% endif %}
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p>No user yet.</p>
+  {% endif %}
+
+  <details class="mb-5">
+    <summary>Set a limit for someone who has not logged in yet</summary>
+    <form method="post" class="row g-2 align-items-end mt-1">
+      <input type="hidden" name="_xsrf" value="{{ xsrf_token }}" />
+      <div class="col-sm-3">
+        <label for="username" class="form-label">User name</label>
+        <input id="username" name="username" class="form-control" required />
+      </div>
+      <div class="col-sm-3">
+        <label for="memory_max" class="form-label">Memory</label>
+        <input id="memory_max" name="memory_max" class="form-control" placeholder="2G" />
+      </div>
+      <div class="col-sm-2">
+        <label for="cpu_quota" class="form-label">CPU</label>
+        <input id="cpu_quota" name="cpu_quota" class="form-control" placeholder="100%" />
+      </div>
+      <div class="col-sm-2">
+        <div class="form-check mb-2">
+          <input id="terminals_off" name="terminals_off" type="checkbox" class="form-check-input" />
+          <label for="terminals_off" class="form-check-label">Terminal off</label>
+        </div>
+      </div>
+      <div class="col-sm-2">
+        <button type="submit" class="btn btn-primary w-100">Save</button>
+      </div>
+    </form>
+  </details>
 </div>
 {% endblock main %}

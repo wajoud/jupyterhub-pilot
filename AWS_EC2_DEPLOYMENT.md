@@ -97,7 +97,7 @@ echo 'hub.example.com {
 sudo systemctl reload caddy
 ```
 
-No domain yet? See the no-domain test setup (self-signed certificate on the public IP) in the README's *HTTPS with Caddy* section.
+No domain yet? See the no-domain test setup (self-signed certificate on the public IP) in the admin guide's [HTTPS with Caddy](docs/ADMIN.md#3-https-with-caddy-on-the-hub) section.
 
 In the Google Cloud console, set the OAuth client's **Authorized redirect URI** to `https://hub.example.com/hub/oauth_callback`.
 
