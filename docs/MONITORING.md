@@ -69,12 +69,17 @@ sudo systemctl enable --now jupyterhub_pilot-agent
 From top to bottom:
 
 - **Needs attention** (only when something does): a user at 90% or more of their memory limit, a worker's disk at 85% or more, a worker's memory at 90% or more, a scheduled notebook whose last run failed.
-- **Totals:** workers online, notebook servers running, CPU and memory in use across all workers.
-- **One card per worker:** CPU, memory and disk (with load average and used/total), a 5-minute CPU and memory graph, network speed, and one row per notebook server:
+- **Totals:** workers online (with their cores, RAM and GPUs added up), notebook servers running and kernels open, CPU and memory in use across all workers, GPU memory (only with a GPU worker), and the fullest disk.
+- **Busiest right now** (when you can see two or more servers): the top five users by CPU and by memory; each bar is the share of that user's own limit.
+- **One card per worker**, titled with its team name: its size (cores, RAM, disk, GPU model or "no GPU"), CPU with one small bar per core, memory, disk, GPU (usage, memory, temperature; only on a GPU worker), a 5-minute CPU and memory graph, network speed, what the memory limits of the running servers add up to, and one row per notebook server:
   - **CPU:** cores in use, compared with the user's CPU limit (`cpu_quota`)
   - **Memory:** used, compared with the user's memory limit (`memory_max`). The bar turns red near the limit, where the kernel kills the user's processes.
-  - **Kernels**, **home folder size** (refreshed every minute), **how long the server has run**, and a **History** button.
-- **Usage history:** a user's CPU cores (average) and memory (average and peak) over the last 24 hours, 7 days or 15 days, with their limit drawn as a dashed line. Hover for exact values; **Show as a table** lists them.
+  - **GPU memory** of the user's kernels (GPU workers only), **kernels** and processes, **home folder size** (refreshed every minute), and a **History** button. How long the server has run is under the user's name.
+- **Usage history**, for the last hour, 24 hours, 7 days or 15 days:
+  - **Most active users** (admins): CPU core-hours, peak memory and how long each server ran. One core-hour is one core fully busy for an hour.
+  - **One user:** time running, average and busiest CPU, peak memory, then CPU cores (average) and memory (average and peak) as graphs with the limit drawn as a dashed line. Hover for exact values; **Show as a table** lists them. A new user appears after their server has run for 5 minutes.
+
+GPU numbers come from `nvidia-smi` on the worker, read every 5 seconds. A worker without it reports no GPU; no setting is needed.
 
 Limits and memory come from the server's cgroup (the `systemd-run` scope the spawner creates). The user is taken from the server's `JUPYTERHUB_USER`, so rows are right even when a team shares one Linux account.
 
@@ -107,7 +112,7 @@ scrape_configs:
       - targets: ["<HUB_PRIVATE_IP>:8000"]
 ```
 
-Gauges, all prefixed `jupyterhub_pilot_`: `worker_cpu_percent`, `worker_memory_used_mb`, `worker_memory_total_mb`, `worker_disk_percent` (label `worker`); `user_cpu_cores`, `user_cpu_limit_cores`, `user_memory_mb`, `user_memory_limit_mb`, `user_kernels` (labels `worker`, `user`). In Grafana, add the Prometheus server as a data source and graph, for example, `jupyterhub_pilot_user_memory_mb / jupyterhub_pilot_user_memory_limit_mb`.
+Gauges, all prefixed `jupyterhub_pilot_`: `worker_cpu_percent`, `worker_memory_used_mb`, `worker_memory_total_mb`, `worker_disk_percent` (label `worker`); `worker_gpu_percent`, `worker_gpu_memory_used_mb`, `worker_gpu_memory_total_mb` (labels `worker`, `gpu`, `model`); `user_gpu_memory_mb`, `user_cpu_cores`, `user_cpu_limit_cores`, `user_memory_mb`, `user_memory_limit_mb`, `user_kernels` (labels `worker`, `user`). In Grafana, add the Prometheus server as a data source and graph, for example, `jupyterhub_pilot_user_memory_mb / jupyterhub_pilot_user_memory_limit_mb`.
 
 The token is separate from the agents' token, so a scraper cannot post metrics. Scrape over the private network; do not expose port 8000 publicly.
 

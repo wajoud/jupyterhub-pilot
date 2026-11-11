@@ -13,6 +13,7 @@ Metrics collected
   - CPU usage  (percent, per-core)
   - Memory     (used, total, percent)
   - Disk       (used, total, percent — root filesystem)
+  - GPU        (per card: usage, memory, temperature; only where nvidia-smi exists)
   - Network    (bytes_sent, bytes_recv, packets_sent, packets_recv,
                 upload_mbps, download_mbps — rolling 2-second rates)
 
@@ -38,6 +39,7 @@ import json
 import logging
 import os
 import pwd
+import shutil
 import socket
 import subprocess
 import time
@@ -62,6 +64,63 @@ _PROC_CACHE: Dict[int, psutil.Process] = {}
 # Home-folder sizes (Linux user -> bytes), refreshed in the background by
 # _refresh_home_sizes() because walking a home folder can take seconds.
 _HOME_BYTES: Dict[str, int] = {}
+
+
+# GPUs, refreshed in the background by _refresh_gpu(). Stays empty on a worker without an NVIDIA driver.
+_GPU: Dict[str, Any] = {"gpus": [], "proc_mb": {}}
+
+
+def _nvidia(query: str) -> List[List[str]]:
+    """Rows of ``nvidia-smi --query-<query>`` as lists of stripped strings."""
+    out = subprocess.run(
+        ["nvidia-smi", f"--query-{query}", "--format=csv,noheader,nounits"],
+        capture_output=True, text=True, timeout=10,
+    )
+    if out.returncode:
+        raise OSError(out.stderr.strip() or "nvidia-smi failed")
+    return [[c.strip() for c in line.split(",")] for line in out.stdout.splitlines() if line.strip()]
+
+
+def _float(text: str) -> Optional[float]:
+    try:
+        return float(text)
+    except ValueError:  # "[N/A]" on cards that do not report the value
+        return None
+
+
+def _read_gpus() -> Dict[str, Any]:
+    """{"gpus": [one dict per card], "proc_mb": {pid: GPU memory in MB}}."""
+    gpus = [
+        {
+            "index": int(row[0]), "name": row[1], "percent": _float(row[2]),
+            "mem_used_mb": _float(row[3]), "mem_total_mb": _float(row[4]), "temp_c": _float(row[5]),
+        }
+        for row in _nvidia("gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu")
+        if len(row) == 6
+    ]
+    proc_mb: Dict[int, float] = {}
+    for row in _nvidia("compute-apps=pid,used_memory"):
+        mb = _float(row[1]) if len(row) == 2 else None
+        if mb is not None and row[0].isdigit():
+            proc_mb[int(row[0])] = proc_mb.get(int(row[0]), 0.0) + mb  # one row per card the process uses
+    return {"gpus": gpus, "proc_mb": proc_mb}
+
+
+async def _refresh_gpu(every: float = 5.0) -> None:
+    """Every *every* seconds, read the GPUs. Returns at once on a worker without ``nvidia-smi``."""
+    if not shutil.which("nvidia-smi"):
+        return
+    failed = False
+    while True:
+        try:
+            _GPU.update(await asyncio.to_thread(_read_gpus))
+            failed = False
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
+            _GPU.update(gpus=[], proc_mb={})
+            if not failed:  # once, not every 5 seconds
+                log.warning("nvidia-smi found but not working (driver not loaded? reboot needed?): %s", exc)
+            failed = True
+        await asyncio.sleep(every)
 
 
 def _cgroup_limits(pid: int) -> Dict[str, Optional[float]]:
@@ -131,6 +190,8 @@ def _collect_users(cpu_count: int) -> List[Dict[str, Any]]:
             "processes": len(tree),
             "uptime_s": int(time.time() - started),
             "home_bytes": _HOME_BYTES.get(linux_user),
+            # GPU memory of the server's kernels; None on a worker without a GPU.
+            "gpu_mem_mb": round(sum(_GPU["proc_mb"].get(p.pid, 0.0) for p in tree), 1) if _GPU["gpus"] else None,
         })
     for pid in list(_PROC_CACHE):
         if pid not in seen:
@@ -268,6 +329,7 @@ def _collect_metrics(prev_net: Dict[str, int], elapsed: float) -> Dict[str, Any]
             "load_avg": load_avg,
         },
         "memory": mem_info,
+        "gpus": _GPU["gpus"],  # [] = no GPU (or no driver) on this worker
         "disk": disk_info,
         "network": net_info,
         # Updated counters returned separately so the caller can pass them
@@ -306,6 +368,7 @@ async def _stream(hub_ws_url: str, interval: float, token: str) -> None:
     backoff = 1.0
     prev_net: Dict[str, int] = {}
     home_task = asyncio.create_task(_refresh_home_sizes())  # noqa: F841  (runs for the agent's lifetime)
+    gpu_task = asyncio.create_task(_refresh_gpu())  # noqa: F841
     last_time: float = time.time()
 
     log.info("Metrics agent starting. Hub WS: %s  interval: %ss", hub_ws_url, interval)

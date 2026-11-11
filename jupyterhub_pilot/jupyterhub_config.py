@@ -143,6 +143,15 @@ c.JupyterHub.extra_handlers = [
     (r"/monitoring/history", UsageHistoryHandler),
     # Prometheus text format for Grafana etc.; off until JUPYTERPILOT_METRICS_TOKEN is set
     (r"/monitoring/metrics", PrometheusHandler),
-    # Per-user RAM/CPU limits (admins only; team limits live in group properties)
-    (r"/limits", LimitsPageHandler, {"store": _store}),
+    # RAM/CPU limits per team and per user (admins only)
+    (
+        r"/limits",
+        LimitsPageHandler,
+        {
+            "store": _store,
+            "worker_ip_for_group": worker_ip_for_group,
+            "defaults": lambda: hub_settings.get("resource_limits"),
+            "snapshots": monitoring_handler._WORKER_SNAPSHOTS,  # the limit each running server really has
+        },
+    ),
 ]

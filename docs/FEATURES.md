@@ -28,8 +28,9 @@ Everything a JupyterHub-Pilot cluster can do, by where it runs: the **Hub** (one
 | Feature | What it does | How | Release | EC2 |
 |---|---|---|---|---|
 | RAM/CPU limit for everyone | Each notebook server runs under a memory and CPU cap; a kernel over the memory cap is killed, the server and other users are not | `resource_limits` in `hub_settings.json` (default `1G`, `50%`) | 0.5.1 | Tested |
-| RAM/CPU limit per team | A different cap for one team | Admin → Groups → team → Properties: `memory_max`, `cpu_quota` ([limits](../README.md#change-the-per-user-ram-and-cpu-limit)) | 0.6.0 | Not yet |
-| RAM/CPU limit per user | A different cap for one user; wins over the team's | **Limits** page in the nav bar (admins) | 0.6.0 | Not yet |
+| RAM/CPU limit per team | A different cap for one team | **Teams** table on the **Limits** page (0.8.0), or Admin → Groups → team → Properties: `memory_max`, `cpu_quota` ([limits](../README.md#change-the-per-user-ram-and-cpu-limit)) | 0.6.0 | Not yet |
+| RAM/CPU limit per user | A different cap for one user; wins over the team's. The page lists every user with the limit they get and where it comes from (0.8.0) | **Limits** page in the nav bar (admins) | 0.6.0 | Not yet |
+| GPU workers | A team's worker can have an NVIDIA GPU; `install-worker` installs the driver only where there is one; the monitoring page shows GPU usage and each user's GPU memory. No per-user GPU limit | Automatic ([GPU workers](../README.md#team-names-worker-sizes-and-gpu-workers)) | 0.8.0 | Not yet |
 | Terminal off | Remove New → Terminal for everyone, or for one user | `terminals_enabled: false`; **Terminal off** on the Limits page ([Terminal](../README.md#terminal-and-jupyterlab)) | 0.6.0 | Not yet |
 | Idle servers stopped | A server unused for 3 hours is stopped, freeing worker RAM; files are kept | `idle_cull` ([Idle servers](../README.md#idle-servers-are-stopped-after-3-hours)) | 0.6.0 | Not yet |
 | Worker down handling | If a worker is unreachable for 5 minutes, its users' servers are shown stopped so they can start again later | Automatic | 0.5.1 | Tested |
@@ -88,7 +89,7 @@ What the cluster does **not** do today (most are ideas in [TODO.md](../TODO.md))
 - **Backups:** notebooks live only on the worker's disk. Losing the worker's disk loses them.
 - **One team per user:** a user in several groups runs on the first one's worker (order not guaranteed), and moving a user to another team leaves their notebooks on the old worker. Planned: choose the team at start, or shared EFS homes ([TODO.md](../TODO.md#users-in-more-than-one-team)).
 - **Moving a team** to a new worker doesn't move its users' files.
-- **GPU or per-team worker sizes**, and stopping idle workers to save cost.
+- **Per-user GPU limits**, and stopping idle workers to save cost.
 - **Sharing a notebook** as a read-only page or dashboard; **real-time collaboration**.
 - **Usage reports** per team over time (the dashboard is live only).
 - **Tested systems:** Ubuntu 24.04 and 26.04. Amazon Linux 2023 has install scripts but has not run on a real instance.

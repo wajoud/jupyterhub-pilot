@@ -2,6 +2,20 @@
 
 Each release says where to upgrade (**Hub**, **workers**, or both) and whether a restart is needed. Upgrade with `sudo jupyterhub-pilot upgrade` on each machine (README → Upgrading).
 
+## 0.8.0 (not released yet)
+
+**Upgrade: Hub and every worker** (workers for the GPU numbers and per-user process counts). Hub restart needed.
+
+Hub:
+- **Limits page redone:** every user with the limit they get and where it comes from (user, team or default), what their running server uses, and a mark when it is still on an older limit. Team limits are set on the same page. Saving a user's row with empty boxes now clears their limits (was an error).
+- **Monitoring page shows more:** worker cards titled with the team name, each worker's size, one bar per CPU core, the busiest users right now, GPU and fullest-disk totals, what the memory limits on a worker add up to.
+- **Usage history:** a "1 hour" range (a new cluster no longer looks empty), totals for the chosen period, and a **Most active users** table for admins.
+- Prometheus: GPU gauges (`worker_gpu_*`, `user_gpu_memory_mb`).
+- `install-hub` installs `nodejs` and `npm` without the recommended extras (340+ fewer packages).
+
+Workers:
+- **GPU workers:** the metrics agent reports NVIDIA GPUs (usage, memory, temperature, memory per user) where `nvidia-smi` exists. `install-worker` installs the driver only on a machine with a GPU (Ubuntu) and asks for a reboot. Workers without a GPU are unchanged.
+
 ## 0.7.0 (2026-11-10)
 
 Includes everything listed under 0.6.0 below, which was never published on its own.

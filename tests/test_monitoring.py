@@ -251,3 +251,26 @@ def test_prometheus_endpoint_needs_its_own_token(monkeypatch, token, auth, ok):
     else:
         with pytest.raises(web.HTTPError):
             h.get()
+
+
+def test_one_hour_range_and_most_active_users_for_admins(usage_store):
+    import time
+
+    now = int(time.time())
+    usage_store.add_usage(
+        [("alice", now - 600, "w1", 2.0, 100, 300, None, None), ("alice", now - 7200, "w1", 2.0, 100, 900, None, None),
+         ("bob", now - 600, "w2", 0.5, 50, 60, None, None)], now)
+    hour = _history("boss", True, usage_store, user="alice", hours="1")
+    assert (hour["span_s"], len(hour["points"])) == (3600, 1)
+    assert [r[0] for r in hour["top"]] == ["alice", "bob"]  # most CPU first
+    assert hour["top"][0][1:4] == [pytest.approx(2 / 12), 300, pytest.approx(1 / 12)]  # core-hours, peak MB, hours
+    assert _history("alice", False, usage_store, hours="1")["top"] == []  # other people's totals are for admins
+
+
+def test_card_gets_its_team_names_and_prometheus_its_gpu(usage_store):
+    usage_store.set_mapping("team_alpha", "10.0.1.5", "/k")
+    usage_store.set_mapping("team_gamma", "10.0.1.5", "/k")
+    _send("10.0.1.5", "w1", gpus=[{"index": 0, "name": "Tesla T4", "percent": 37.0, "mem_used_mb": 5900.0}])
+    assert mh._WORKER_SNAPSHOTS["w1"]["teams"] == ["team_alpha", "team_gamma"]
+    text = mh.prometheus_text(mh._WORKER_SNAPSHOTS)
+    assert 'jupyterhub_pilot_worker_gpu_percent{worker="w1",gpu="0",model="Tesla T4"} 37.0' in text

@@ -17,7 +17,9 @@ fi
 echo "1. OS packages"
 if command -v apt-get >/dev/null; then
     apt-get update -y
-    apt-get install -y sqlite3 nodejs npm curl jq gpg openssl
+    apt-get install -y sqlite3 curl jq gpg openssl
+    # Without the "recommended" extras (a compiler toolchain, Perl libraries): 340+ packages fewer.
+    apt-get install -y --no-install-recommends nodejs npm
     # Vault (optional). HashiCorp publishes up to Ubuntu 24.04 (noble).
     CODENAME=$(lsb_release -cs 2>/dev/null || echo noble)
     case "$CODENAME" in focal|jammy|noble) ;; *) CODENAME=noble ;; esac

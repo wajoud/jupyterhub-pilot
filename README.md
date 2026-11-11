@@ -37,6 +37,22 @@ One JupyterHub for many teams. Each team gets its own worker VM, and every noteb
 
 Full list, with where each feature runs, how to turn it on and whether it has been tested on EC2: **[Features](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/FEATURES.md)**.
 
+### What it looks like
+
+Example data: two teams, one worker with a GPU and one without.
+
+**Monitoring** (`/hub/monitoring`): what needs attention first, totals, who is busiest right now, then one card per team's worker with every user's CPU and memory against their limit.
+
+![Monitoring page: a Needs attention list, totals for workers, CPU, memory, GPU and disk, the busiest users, and one card per worker](https://raw.githubusercontent.com/wajoud/jupyterhub-pilot/main/docs/images/monitoring.png)
+
+**Usage history** (same page): 15 days of each user's CPU and memory, with the most active users of the chosen period.
+
+![Usage history: most active users by CPU core-hours, then one user's totals and CPU and memory graphs with the limit drawn in](https://raw.githubusercontent.com/wajoud/jupyterhub-pilot/main/docs/images/usage-history.png)
+
+**Limits** (`/hub/limits`, admins): each team's and each user's RAM and CPU limit, where it comes from, and what their running server uses.
+
+![Limits page: a Teams table with each worker's size and limit boxes, and a Users table with the limit each user gets and their running server](https://raw.githubusercontent.com/wajoud/jupyterhub-pilot/main/docs/images/limits.png)
+
 ## How it works
 
 ```text
@@ -96,7 +112,7 @@ sudo pip3 install --break-system-packages --ignore-installed "jupyterhub-pilot[h
 sudo jupyterhub-pilot install-hub
 ```
 
-`--break-system-packages` and `--ignore-installed` let pip install next to Ubuntu's own Python packages; leave them out on Amazon Linux.
+Run the `apt install` line first: a fresh Ubuntu has no `pip3`. `--break-system-packages` and `--ignore-installed` let pip install next to Ubuntu's own Python packages; leave them out on Amazon Linux. At the end pip may print `ERROR: pip's dependency resolver ...` naming `botocore` or `pyopenssl`: that is expected (Ubuntu's own copies want other versions) and the install has worked if the last line says `Successfully installed`.
 
 `install-hub` asks for the Hub's private IP, your admin username and the first worker's private IP. It then:
 
@@ -393,6 +409,13 @@ It adds or updates the team in `/opt/jupyterhub-pilot/user_mapping.json`, loads 
 
 To move a team to another VM: set up the new worker (step 2) and run `add-worker` with the same team name and the new IP. Users get the new VM the next time they start their server. Their notebook files stay on the old VM (`/home/<user>/notebook`); copy them over if needed.
 
+### Team names, worker sizes and GPU workers
+
+- **Names:** the team name is yours to choose in `add-worker` (letters, digits, `_` and `-`), and it must match the JupyterHub group. The monitoring page shows each worker under its team name, with the machine's hostname next to it.
+- **Sizes:** every team has its own worker, so a team gets a bigger machine by choosing a bigger instance type for it. The **Limits** page shows each worker's cores and RAM next to the team's limit.
+- **GPU:** some workers can have an NVIDIA GPU and others none; nothing is configured on the Hub. `install-worker` looks for a GPU: with none it installs nothing; with one and no driver it installs Ubuntu's recommended driver and asks for one reboot (on Amazon Linux it prints the AWS driver guide instead). Starting from an AWS GPU image (Deep Learning AMI) skips the driver install. A worker set up before it had a GPU: `sudo apt install -y ubuntu-drivers-common && sudo ubuntu-drivers install && sudo reboot`.
+- Notebooks on a GPU worker use the GPU like any program on that machine (`nvidia-smi` in a terminal; install `torch` or another library as in [Data packages](#data-packages)). The monitoring page shows the GPU's usage, memory and temperature, and each user's GPU memory. There is **no per-user GPU limit**: the users of that team share the card, and one user can fill its memory.
+
 ## Shared home folders (EFS)
 
 By default each user's files live on their team's worker disk (`/home/<user>`). With one shared filesystem mounted on every worker, a user has the same files on every worker: moving a user or a whole team to another worker needs no copying, a replaced worker loses nothing, and AWS Backup can back up every notebook in one place. Not yet tested on a cluster.
@@ -470,7 +493,7 @@ Notebook 7 is built on JupyterLab, so both come with the worker install:
 
 Programs started in a terminal keep running after the browser is closed and count against the user's limit until they end, the user's server stops, or the idle culler stops the server.
 
-**Turn the terminal off for one user:** **Limits** in the nav bar (admins only) → the user's name → tick **Terminal off** → **Save**. It applies on their next server start, no Hub restart. **Clear** on their row turns it back on.
+**Turn the terminal off for one user:** **Limits** in the nav bar (admins only) → the user's row → tick **off** under Terminal → **Save**. It applies on their next server start, no Hub restart. **Clear** on their row turns it back on.
 
 **Turn terminals off for everyone:** set `terminals_enabled` to `false` in `hub_settings.json` and restart the Hub; each server started after that has no **Terminal** menu.
 
@@ -544,10 +567,10 @@ The packages are installed system-wide with minimum versions. Run `sudo jupyterh
 Open `https://hub.example.com/hub/monitoring` (or **Monitoring** in the Hub's nav bar).
 
 - You must be logged in.
-- Admins see every worker and every user's CPU, memory (against their limit), kernels and home-folder size. Other users see only their own team's workers and their own usage row.
+- Admins see every worker (its size, each CPU core, GPU if it has one) and every user's CPU, memory (against their limit), kernels and home-folder size, plus who is busiest right now. Other users see only their own team's workers and their own usage row.
 - A worker appears when its metrics agent connects with the right token and disappears when the agent stops.
 
-**History:** each user's CPU and memory are saved every 5 minutes while their server runs and kept for 15 days in the Hub's SQLite DB. The **Usage history** section at the bottom of the page graphs the last 24 hours, 7 days or 15 days; **History** on a user's row opens theirs. Users see their own history, admins anyone's.
+**History:** each user's CPU and memory are saved every 5 minutes while their server runs and kept for 15 days in the Hub's SQLite DB. The **Usage history** section at the bottom of the page graphs the last hour, 24 hours, 7 days or 15 days; **History** on a user's row opens theirs. Users see their own history; admins anyone's, and a **Most active users** table for the chosen period.
 
 **Grafana / Prometheus:** set `JUPYTERPILOT_METRICS_TOKEN=<long random string>` in `/etc/jupyterhub-pilot/hub.env`, restart the Hub, and scrape `http://<HUB_PRIVATE_IP>:8000/hub/monitoring/metrics` with that bearer token ([Monitoring](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/MONITORING.md#grafana-and-prometheus) has the scrape config). The endpoint is off while the variable is unset.
 
@@ -581,8 +604,8 @@ A kernel over `memory_max` is killed; the worker and other users are not affecte
 
 Each value (`memory_max`, `cpu_quota`) comes from the first place that sets it:
 
-1. **One user:** **Limits** in the nav bar (admins only, `/hub/limits`): enter the user name and a value, **Save**. **Clear** goes back to the team or default limit.
-2. **A team:** **Admin** → **Groups** → the team → **Properties**: add `memory_max` = `2G` and/or `cpu_quota` = `100%`, then **Apply**.
+1. **One user:** **Limits** in the nav bar (admins only, `/hub/limits`) → the user's row → type a value, **Save**. **Clear** (or saving empty boxes) goes back to the team or default limit.
+2. **A team:** the **Teams** table on the same page (it writes the group's `memory_max` / `cpu_quota` properties, which you can also edit in **Admin** → **Groups**).
 3. **Everyone else:** `resource_limits` in `hub_settings.json` (default `1G` RAM, `50%` of one core).
 
 Changes from 1 and 2 apply on the user's next server start, with no Hub restart. Values:
@@ -590,7 +613,7 @@ Changes from 1 and 2 apply on the user's next server start, with no Hub restart.
 - `memory_max`: `300M`, `512M`, `1G`, `2G`, ... (`M`, `G` or `T` required)
 - `cpu_quota`: `50%` = half a core, `100%` = one core, `200%` = two cores
 
-The Limits page refuses a bad value. A bad team property is skipped with a warning in the Hub log (`team limit ignored`) and the default is used. The Hub log says which limit a server got and where it came from: `limits for 'alice': MemoryMax=2G (team) CPUQuota=50% (default)`. `/hub/monitoring` shows each user's memory against the limit their server really has.
+The Limits page refuses a bad value. A bad team property is skipped with a warning in the Hub log (`team limit ignored`) and the default is used. The Hub log says which limit a server got and where it came from: `limits for 'alice': MemoryMax=2G (team) CPUQuota=50% (default)`. The Limits page lists every user with the limit they get and where it comes from, and marks a running server that is still on an older limit; `/hub/monitoring` shows each user's memory against the limit their server really has.
 
 To change the default for everyone, on the Hub:
 

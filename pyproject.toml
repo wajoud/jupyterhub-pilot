@@ -95,6 +95,7 @@ dev = [
     "types-requests",
     "types-paramiko",
     "tornado",        # needed by test_config.py → jupyterhub_config → monitoring_handler
+    "jinja2",         # test_pages.py renders the Limits template
 ]
 
 [tool.setuptools.packages.find]

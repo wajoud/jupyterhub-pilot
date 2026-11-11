@@ -3,6 +3,28 @@
 Findings from the 2026-11-07 EC2 test (Ubuntu 24.04 Arm, 1 Hub + 2 workers, us-east-1, JupyterHub 6.2.0) are grouped
 under "Next release". Hub install, worker installs, team routing, JIT user creation, cgroup limits and metrics agents all worked.
 
+## 2026-11-10 test: 0.7.0 from PyPI, 1 Hub + 2 workers (ap-south-1, Ubuntu 26.04 Arm)
+
+Findings so far; fixes go into 0.7.1.
+
+- [x] Seen working on 2026-11-10 (as reported during the test, 1 Hub + 2 workers, 2 cores / 3.7 GB each): install from PyPI, `install-hub`, `install-worker`, `add-worker`, test login, Caddy `tls internal` on the public IP, team routing, default limits, per-user limit + Terminal off (after a restart), a dotted user name (`a.a.a`), live monitoring, usage history, load test.
+- [ ] Still to do on this cluster: EFS (mount, same uid/gid on both workers, second user cannot read a home, unmounted → 503, move an existing user), two-team "Which team?", worker reboot → server shown stopped, a normal user's view of `/hub/monitoring`, load-test `--cleanup` archives in `/home/.deleted`, Prometheus endpoint, Vault.
+
+- [x] **`install-hub` is slow at "1. OS packages":** `apt-get install nodejs npm` downloads 340+ small packages one by one, many of them only "recommended" extras (Perl libraries, a compiler toolchain). `--no-install-recommends` added in `install_hub.sh` (0.8.0).
+  - [ ] Check on a fresh Hub that `npm install -g configurable-http-proxy` still works and the Hub starts.
+- [x] **Usage history looks empty on a new cluster:** "1 hour" range added, and the page says a user appears after their first 5 minutes (0.8.0).
+- [x] Docs: README says to run the `apt install python3-pip` line first and that pip's `botocore` / `pyopenssl` conflict message is expected (0.8.0).
+  - [ ] Check `aws --version` still works where the apt `awscli` is used.
+
+## 0.8.0: GPU workers, Limits page, monitoring page (branch `feature/0.8.0`)
+
+- [x] Metrics agent reads `nvidia-smi` (per card and per user); a worker without it reports no GPU. `install-worker` installs the driver only where a GPU is found (Ubuntu: `ubuntu-drivers install`, then a reboot).
+- [x] Monitoring page: team name on each card, worker size, per-core bars, GPU meter and per-user GPU memory, busiest users, fullest disk, sum of memory limits, 1-hour range, period totals, most active users (admins). Looked at with made-up workers only.
+- [x] Limits page: all users with the limit that applies and its source, running server's use, "still on the old limit" mark, team limits on the same page.
+- [ ] Check on a cluster with one GPU worker and one without: `install-worker` on a fresh GPU instance (Ubuntu 26.04, x86 and Arm) installs a driver and `nvidia-smi` works after the reboot; the GPU card and a user's GPU memory show on `/hub/monitoring`; the worker without a GPU shows "no GPU".
+- [ ] Check on a cluster: save a team limit on the Limits page and see it in Admin → Groups → properties; the "old limit" mark goes after the user restarts; the page with 50+ users.
+- [ ] Later, if asked: per-user GPU limits (cgroups cannot do it; needs one GPU per user or NVIDIA MPS), a filter box on the Limits page, usage per team.
+
 ## Next release (branch `fix/ec2-test-findings`)
 
 Released in 0.4.0. Verified on 2026-11-08 in ap-south-1 (Ubuntu 26.04 Arm, 1 Hub + 2 workers, JupyterHub 6.2.0).
@@ -178,7 +200,8 @@ Ranked by value for effort. Each needs a decision before it becomes real work.
   - [ ] Check on a cluster: the Git tab in `/lab` (and whether Notebook 7's `/tree` shows a Git menu); `nbdiff` works.
 
 ### Later (bigger)
-- [ ] **Worker sizes per team:** bigger or GPU workers for some teams; stop idle workers to save cost.
+- [x] **Worker sizes per team:** each team's worker can be any size, with or without a GPU (0.8.0, see the top).
+- [ ] **Stop idle workers** to save cost.
 - [ ] **Share results:** publish a notebook as read-only HTML or a Voilà dashboard.
 - [x] **Data-aware AI magics:** the context lists pandas/polars DataFrames with shape and column dtypes (first 30); new `%explain [question]`. Docs + tests.
   - [ ] Check with a real model on a cluster that `%do` uses the real column names.

@@ -23,6 +23,29 @@ else
     echo "❌ Needs apt (Ubuntu) or dnf (Amazon Linux 2023)."
     exit 1
 fi
+
+# NVIDIA GPU (PCI vendor 10de): the driver is installed only on a worker that has one.
+GPU_REBOOT=""
+if grep -qsi 0x10de /sys/bus/pci/devices/*/vendor; then
+    if nvidia-smi >/dev/null 2>&1; then
+        echo "✅ NVIDIA GPU found, driver working."
+    elif command -v apt-get >/dev/null; then
+        echo "NVIDIA GPU found without a working driver: installing Ubuntu's recommended one (several minutes)."
+        # Plain `install`, not `--gpgpu`: the server-only set leaves out nvidia-smi, which the metrics agent reads.
+        if apt-get install -y ubuntu-drivers-common && ubuntu-drivers install; then
+            GPU_REBOOT=1
+        else
+            echo "⚠️  The GPU driver did not install. The worker works without it; notebooks just cannot use the GPU."
+            echo "   Install it by hand later, or start from an AWS GPU image (Deep Learning AMI)."
+        fi
+    else
+        echo "⚠️  NVIDIA GPU found without a driver. On Amazon Linux install it yourself:"
+        echo "   https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/install-nvidia-driver.html"
+    fi
+else
+    echo "No NVIDIA GPU on this machine: no driver needed."
+fi
+
 if ! command -v jupyterhub-singleuser >/dev/null; then
     echo "❌ jupyterhub-singleuser not found. Install the worker extras system-wide first:"
     echo "   sudo pip3 install --break-system-packages \"jupyterhub-pilot[worker,ai]\""
@@ -82,3 +105,6 @@ systemctl restart jupyterhub_pilot-metrics
 echo ""
 echo "✅ Worker set up. Agent logs: sudo journalctl -u jupyterhub_pilot-metrics -f"
 echo "On the Hub: sudo jupyterhub-pilot add-worker <team> <this worker's private IP> $ADMIN_USER"
+if [ -n "$GPU_REBOOT" ]; then
+    echo "⚠️  GPU driver installed: reboot this worker once (sudo reboot), then check with nvidia-smi."
+fi
