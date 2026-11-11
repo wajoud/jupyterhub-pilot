@@ -13,7 +13,7 @@ Findings so far; fixes go into 0.7.1.
 - [x] **`install-hub` is slow at "1. OS packages":** `apt-get install nodejs npm` downloads 340+ small packages one by one, many of them only "recommended" extras (Perl libraries, a compiler toolchain). `--no-install-recommends` added in `install_hub.sh` (0.8.0).
   - [ ] Check on a fresh Hub that `npm install -g configurable-http-proxy` still works and the Hub starts.
 - [x] **Usage history looks empty on a new cluster:** "1 hour" range added, and the page says a user appears after their first 5 minutes (0.8.0).
-- [x] Docs: README says to run the `apt install python3-pip` line first and that pip's `botocore` / `pyopenssl` conflict message is expected (0.8.0).
+- [x] Docs: the admin guide says to run the `apt install python3-pip` line first and that pip's `botocore` / `pyopenssl` conflict message is expected (0.8.0).
   - [ ] Check `aws --version` still works where the apt `awscli` is used.
 
 ## 0.8.0: GPU workers, Limits page, monitoring page (branch `feature/0.8.0`)
@@ -89,7 +89,7 @@ Done on branch `feature/pip-install` (release as 0.5.0).
 
 ## 2026-11-08 test: 0.5.1 from PyPI, 1 Hub + 4 workers
 
-ap-south-1, Ubuntu 26.04 Arm, `t4g.small` everywhere, JupyterHub 6.2.0, Notebook 7.6.5, limit `1G`/`50%`, test login behind Caddy `tls internal`. Steps are in README → Test a cluster.
+ap-south-1, Ubuntu 26.04 Arm, `t4g.small` everywhere, JupyterHub 6.2.0, Notebook 7.6.5, limit `1G`/`50%`, test login behind Caddy `tls internal`. Steps are in Admin guide → Test a cluster.
 
 - [x] `install-hub`, `install-worker` (answers piped in), `add-worker` for 4 teams.
 - [x] 8 users, no workload: 8/8 ready, median 7.6 s, max 9.3 s.
@@ -123,7 +123,7 @@ Today `resource_limits` in `hub_settings.json` is one limit for every user, and 
 `install-hub` only installs the `vault` binary (on Ubuntu 26.04 from HashiCorp's 24.04 repo). It does not start a Vault server, create a token or a policy, or say how a user reads their secrets. `docs/SECURITY.md` §4 assumes a Vault server already exists.
 
 - [x] Docs (`docs/SECURITY.md` §4): what `install-hub` does and doesn't do, dev-mode and production server, read-only policy + periodic token (+ weekly renew cron), `hub.env` + `vault_enabled`, adding and reading secrets, log lines, who can see what.
-- [x] README → Test a cluster step 6 (Vault).
+- [x] Admin guide → Test a cluster step 6 (Vault).
 - [ ] Check on the Hub whether `vault` got installed on Ubuntu 26.04 (`vault version`); if `install-hub` printed "Vault not installed", say so in the docs.
 - [ ] Run step 6 on a cluster.
 - [x] The Hub renews its own token (`/v1/auth/token/renew-self`, at start and daily); no cron job. The policy needs the `auth/token/renew-self` path (the old cron job needed it too and would have got a `403`).
@@ -131,7 +131,7 @@ Today `resource_limits` in `hub_settings.json` is one limit for every user, and 
 
 ## Upgrades: update only what changed, keep everything working
 
-Today an upgrade is `pip install -U` + a restart (README → Upgrading). That only updates the Python code. When a release also changes the systemd unit, `hub.env`, `hub_settings.json` keys or the SQLite tables, the admin has to fix it by hand (0.4.0's metrics URL change needed a `sed` on every worker) or run `install-hub` / `install-worker` again.
+Today an upgrade is `pip install -U` + a restart (Admin guide → Upgrading). That only updates the Python code. When a release also changes the systemd unit, `hub.env`, `hub_settings.json` keys or the SQLite tables, the admin has to fix it by hand (0.4.0's metrics URL change needed a `sed` on every worker) or run `install-hub` / `install-worker` again.
 
 - [x] `sudo jupyterhub-pilot upgrade` (Hub and workers): pip upgrade, then the new code runs only the steps newer than `/etc/jupyterhub-pilot/version`; each step idempotent. Never touches keys, tokens, passwords, teams or homes.
 - [x] Steps so far: 0.4.0 worker metrics URL fix; 0.6.0 Hub `on_user_delete` + `idle_cull` defaults (existing values kept); 0.6.0 worker `acl` + `git` packages. `install-hub` / `install-worker` write the version file.
@@ -149,7 +149,7 @@ Users want to pick an `.ipynb` and have it run on a schedule (every night, every
 - [x] `%schedule add <when> <nb> [--keep N]`, `list`, `run`, `pause`, `resume`, `delete`; admins list all jobs on a worker (README command).
 - [x] Output `<name>-<YYYYmmdd-HHMM>.ipynb` (or `-FAILED`) next to the original, last N kept; `list` shows the last result.
 - [x] Survives restarts (linger, `Persistent=true` catches up missed runs). Delete the user → account and timers gone.
-- [x] Docs: README → Scheduled notebooks; `docs/SECURITY.md` (env file). Tests (units mocked).
+- [x] Docs: Using the notebooks → Scheduled notebooks; `docs/SECURITY.md` (env file). Tests (units mocked).
 - [ ] Check on a cluster: `%schedule add "*:0/2" test.ipynb` (every 2 minutes), result appears, `-FAILED` on a raising cell, a 2 GB cell is killed under a `1G` limit, job runs again after a worker reboot, `systemd-analyze` exists on Ubuntu 26.04 and AL2023.
 - [x] Failed runs on `/hub/monitoring` (each run writes `~/.config/jupyterhub-pilot/jobs/<name>.last`; the metrics agent reports the failed ones). Not shown to users of a shared `ssh_user` team (admins see them).
   - [ ] Check on a cluster: a failing job appears under its worker, and goes after a good run.
@@ -161,7 +161,7 @@ Notebook 7 is built on JupyterLab and pulls in `jupyterlab` and the terminal ext
 
 - [x] Decided: keep Notebook (`/tree`) as the default; JupyterLab at `/user/<name>/lab` and via **View → Open JupyterLab**.
 - [x] `terminals_enabled: false` in `hub_settings.json` adds `--ServerApp.terminals_enabled=False` to the spawn command (whole Hub). Test.
-- [x] Docs: README → Terminal and JupyterLab; `docs/SECURITY.md` §1 terminal note.
+- [x] Docs: Using the notebooks → Terminal and JupyterLab; `docs/SECURITY.md` §1 terminal note.
 - [ ] Check on a cluster: terminal opens as the user on the team worker, no `sudo`, a `stress` there is capped like a kernel; `/lab` loads with the AI magics; `terminals_enabled: false` removes the menu.
 - [x] Terminal off per user: **Terminal off** on the admin Limits page (SQLite `user_limits.terminals_off`); off if that or the Hub-wide switch says so. Tests; README. Branch `feature/terminal-per-user`.
   - [ ] Check on a cluster: tick it for alice, she restarts her server, New has no Terminal; bob still has one.
@@ -172,12 +172,12 @@ Today a user's **first** JupyterHub group decides their worker, team limit and `
 
 - [x] **Choose the team at start:** for a user in several team groups, a "Which team?" choice on the spawn page; the choice picks the worker, limit and `team/` folder. One-team users see no change. Groups without a worker are ignored; the default is the first team by name (group order no longer matters). Tests.
   - [ ] Check on a cluster: a user in two teams sees the choice, lands on the chosen worker with that team's limit; an API/culler start with no choice uses the last one.
-- [x] **Shared homes (EFS):** `sudo jupyterhub-pilot mount-homes <efs-dns>` on every worker (mounts at `/efs/home`, not `/home`: that would hide the admin user's SSH keys), then `home_base` in `hub_settings.json`. The Hub gives each user one Linux UID for every worker (SQLite `user_uids`, from 20000) and refuses to start a server where the filesystem is not mounted. Scheduled jobs are pinned to their worker (`ConditionHost`). Tests; README → Shared home folders.
+- [x] **Shared homes (EFS):** `sudo jupyterhub-pilot mount-homes <efs-dns>` on every worker (mounts at `/efs/home`, not `/home`: that would hide the admin user's SSH keys), then `home_base` in `hub_settings.json`. The Hub gives each user one Linux UID for every worker (SQLite `user_uids`, from 20000) and refuses to start a server where the filesystem is not mounted. Scheduled jobs are pinned to their worker (`ConditionHost`). Tests; Admin guide → Shared home folders.
   - [ ] Check on a cluster: two workers + EFS; a two-team user sees the same files on both with the same owner; unmount on one worker → start refused with the 503 message; the migration steps for an existing user (`rsync`, `userdel`, start); `adduser --uid/--home` on Ubuntu and `useradd -u/-d` on AL2023.
   - [ ] Check on a cluster: `id <user>` shows the same uid **and** gid on both workers (the `groupmod` line); a second user cannot read the first one's home on either worker; a user not yet moved still gets the `team`/`shared` links in `/home/<user>/notebook`.
 - [ ] Check on a cluster: reboot a worker with a server running → within 30 s the Hub shows it stopped and Start works (`poll()` checks the process is `jupyterhub-singleuser`).
   - [ ] Check on EFS: IPython history and Jupyter's SQLite files work on NFS (no "database is locked"); start time compared with a local home; `du` of a large home by the metrics agent.
-- [x] README → Move a user to another team.
+- [x] Admin guide → Move a user to another team.
   - [ ] Check the `tar | ssh` copy command there on a cluster.
 
 ## Ideas for a better analysis / data science setup
@@ -186,7 +186,7 @@ Ranked by value for effort. Each needs a decision before it becomes real work.
 
 ### First (small effort)
 - [x] **Idle culling:** `jupyterhub-idle-culler` as a Hub service, `idle_cull` in `hub_settings.json` (default 3 h, on for new installs, off for old ones until the key is added). Branch `feature/todo-0.6.0`.
-  - [ ] Check on a cluster: README → Test a cluster step 5 (server stopped after a 120 s timeout).
+  - [ ] Check on a cluster: Admin guide → Test a cluster step 5 (server stopped after a 120 s timeout).
   - [ ] Check whether a kernel that runs a long silent cell (no output) keeps the server alive; if not, keep the "print progress" advice in README or raise the default.
 - [x] **Shared team folder:** `/data/<team>` (Linux group per team, setgid + default ACL) and read-only `/data/shared`, created and linked into `~/notebook` at every server start (JIT step), so no worker re-install. `install-worker` adds the `acl` package.
   - [ ] Check on a cluster: two users of one team both write `team/`; a user of another team on the same worker can't; `shared/` is read-only.
@@ -196,7 +196,7 @@ Ranked by value for effort. Each needs a decision before it becomes real work.
 ### Next (protect work, reach data)
 - [ ] **Notebook backups:** with shared homes (above), turn on AWS Backup for the EFS filesystem (console, no code). Without EFS: nightly sync to S3 or EBS snapshots, still to do.
 - [ ] **Data connections from Vault:** turn a user's Vault secrets into ready `%sql` / S3 connections, no passwords in notebooks (after the Vault section above).
-- [x] **Git in the notebook:** `jupyterlab-git` + `nbdime` in the worker extra, `git` in `install-worker`; README → Git.
+- [x] **Git in the notebook:** `jupyterlab-git` + `nbdime` in the worker extra, `git` in `install-worker`; Using the notebooks → Git.
   - [ ] Check on a cluster: the Git tab in `/lab` (and whether Notebook 7's `/tree` shows a Git menu); `nbdiff` works.
 
 ### Later (bigger)

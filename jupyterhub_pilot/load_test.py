@@ -10,7 +10,7 @@ Load test for a JupyterHub-Pilot cluster. Run it on the Hub.
   4. Prints spawn times, failures and kernel results per team.
   --cleanup stops and deletes the test users instead. The Hub then deletes their
   Linux accounts on the workers (homes archived in /home/.deleted, see
-  on_user_delete in README).
+  on_user_delete in docs/ADMIN.md).
 
 Needs an admin API token (Hub → Token page while logged in as an admin):
 

@@ -19,7 +19,7 @@ Since JupyterHub and its dependencies (`paramiko`, Google OAuthenticator, etc.) 
 ## 📁 Test Files
 
 ### [`test_spawner.py`](test_spawner.py) — SSH Spawner Lifecycle
-Tests for the core `CustomSpawner` SSH spawner in [`spawner.py`](../spawner.py).
+Tests for the core `CustomSpawner` SSH spawner in [`spawner.py`](../jupyterhub_pilot/spawner.py).
 
 | Test | What it validates |
 |---|---|

@@ -51,7 +51,8 @@ Put [Caddy](https://caddyserver.com/) in front for HTTPS, create a group per tea
 
 ## Learn more
 
-- [Full guide](https://github.com/wajoud/jupyterhub-pilot#readme): HTTPS, test login, teams, upgrading, troubleshooting
+- [Admin guide](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/ADMIN.md): HTTPS, test login, teams, limits, upgrading, troubleshooting
+- [Using the notebooks](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/USING.md) · [Screenshots](https://github.com/wajoud/jupyterhub-pilot#what-it-looks-like)
 - [AWS EC2 walkthrough](https://github.com/wajoud/jupyterhub-pilot/blob/main/AWS_EC2_DEPLOYMENT.md)
 - [AI magics](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/AI_MAGICS.md) · [Monitoring](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/MONITORING.md) · [Security](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/SECURITY.md)
 - [Releases](https://github.com/wajoud/jupyterhub-pilot/releases) · [Issues](https://github.com/wajoud/jupyterhub-pilot/issues)
