@@ -3,14 +3,14 @@
 Findings from the 2026-11-07 EC2 test (Ubuntu 24.04 Arm, 1 Hub + 2 workers, us-east-1, JupyterHub 6.2.0) are grouped
 under "Next release". Hub install, worker installs, team routing, JIT user creation, cgroup limits and metrics agents all worked.
 
-## 0.8.0 release test plan (branch `release/0.8.0`)
+## 0.8.0 release test plan
 
-0.8.0 is tested from the release branch **before** it goes to PyPI (a PyPI version can never be replaced). Tick each line with the date; write what went wrong under it. A failed **must** line blocks the release; a failed *later* line becomes a TODO for 0.8.1.
+0.8.0 is merged to `main` and tested from there **before** it goes to PyPI (a PyPI version can never be replaced). Fixes found by the test go to `main` through a normal branch and PR; then reinstall with the same line. Tick each line with the date; write what went wrong under it. A failed **must** line blocks the release; a failed *later* line becomes a TODO for 0.8.1.
 
 Install line used below (Hub: `hub`; worker: `worker,ai`):
 
 ```bash
-ZIP=https://github.com/wajoud/jupyterhub-pilot/archive/refs/heads/release/0.8.0.zip
+ZIP=https://github.com/wajoud/jupyterhub-pilot/archive/refs/heads/main.zip
 sudo pip3 install --no-cache-dir --break-system-packages --ignore-installed "jupyterhub-pilot[hub] @ $ZIP"
 ```
 
@@ -70,10 +70,10 @@ Each has its steps where linked. Do as many as time allows; none blocks 0.8.0.
 
 ### F. Release (after A–C pass, and D or a "not yet tested" note)
 
-- [ ] F1. Fixes from the test are on `release/0.8.0`; CI green; `CHANGELOG.md` has the date; `docs/FEATURES.md` says what was tested.
-- [ ] F2. `python -m build`, `twine check --strict dist/jupyterhub_pilot-0.8.0*`, PR to `main`, merge.
+- [ ] F1. Fixes from the test are merged to `main`; CI green; `CHANGELOG.md` has the date; `docs/FEATURES.md` says what was tested.
+- [ ] F2. On `main`: `python -m build`, `twine check --strict dist/jupyterhub_pilot-0.8.0*`.
 - [ ] F3. Upload from `~/projects/Github/JupyterPilot`: `.venv/bin/python -m twine upload dist/jupyterhub_pilot-0.8.0*`.
-- [ ] F4. Tag `v0.8.0` on the merge commit, GitHub release with the dist files, delete the branch.
+- [ ] F4. Tag `v0.8.0` on the commit that was built, GitHub release with the dist files.
 - [ ] F5. On the test cluster: `sudo jupyterhub-pilot upgrade` (now from PyPI) reports 0.8.0 and changes nothing.
 
 ## 2026-11-10 test: 0.7.0 from PyPI, 1 Hub + 2 workers (ap-south-1, Ubuntu 26.04 Arm)
