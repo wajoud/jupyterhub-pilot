@@ -3,6 +3,79 @@
 Findings from the 2026-11-07 EC2 test (Ubuntu 24.04 Arm, 1 Hub + 2 workers, us-east-1, JupyterHub 6.2.0) are grouped
 under "Next release". Hub install, worker installs, team routing, JIT user creation, cgroup limits and metrics agents all worked.
 
+## 0.8.0 release test plan
+
+0.8.0 is merged to `main` and tested from there **before** it goes to PyPI (a PyPI version can never be replaced). Fixes found by the test go to `main` through a normal branch and PR; then reinstall with the same line. Tick each line with the date; write what went wrong under it. A failed **must** line blocks the release; a failed *later* line becomes a TODO for 0.8.1.
+
+Install line used below (Hub: `hub`; worker: `worker,ai`):
+
+```bash
+ZIP=https://github.com/wajoud/jupyterhub-pilot/archive/refs/heads/main.zip
+sudo pip3 install --no-cache-dir --break-system-packages --ignore-installed "jupyterhub-pilot[hub] @ $ZIP"
+```
+
+### A. Upgrade the 0.7.0 cluster (must) — about 20 minutes
+
+The 2026-11-10 cluster (1 Hub + 2 workers, no GPU). If the instances were stopped, the Hub's public IP changed: fix the Caddyfile first.
+
+- [ ] A1. Before: on the Hub note `cat /etc/jupyterhub-pilot/version` (0.7.0), the teams in Admin → Groups, one user's limit on `/hub/limits`, and start one server and leave it running.
+- [ ] A2. Hub: the install line with `hub`, then `sudo jupyterhub-pilot upgrade --no-pip`. Expect `hub: 0.7.0 → 0.8.0`, a warning for both workers (still 0.7.0), and the restart question.
+- [ ] A3. Each worker: the install line with `worker,ai`, then `sudo jupyterhub-pilot upgrade --no-pip`. Expect `worker: 0.7.0 → 0.8.0` and `metrics agent restarted`.
+- [ ] A4. After: `sudo jupyterhub-pilot upgrade --no-pip --yes` on the Hub again shows no worker warning. Teams, the user's limit, homes and the admin login are unchanged. `sudo journalctl -u jupyterhub -n 50` has no traceback.
+
+### B. The new pages on the upgraded cluster (must) — about 30 minutes
+
+- [ ] B1. `/hub/monitoring` as admin: each card is titled with its team name and shows its size and "no GPU"; one bar per CPU core; the Fullest disk tile; no GPU tile, no GPU column.
+- [ ] B2. Start servers for two users (`jupyterhub-pilot load-test --hub $HUB --teams team_alpha,team_beta --users 4`): "Busiest right now" appears; the cards show processes and "Memory limits add up to".
+- [ ] B3. Usage history: "1 hour" shows the points of the last hour; "Most active users" lists the load-test users; History on a row opens that user; the four totals above the graphs make sense.
+- [ ] B4. The same page as a normal user (test login): only their team's worker and their own row; no "Most active users"; no "Busiest right now".
+- [ ] B5. `/hub/limits` loads and lists **every** user with team, limit and source. (This is the code that never ran on a real JupyterHub.)
+- [ ] B6. Limits, one user: type `2G` in a user's Memory box → Save → "Gets now" says `2G set here`; their running server shows "still on the old limit"; after they restart the mark is gone and `/hub/monitoring` shows 2.0 GB. Clear → back to the team or default.
+- [ ] B7. Limits, a team: set `3G` / `150%` on team_beta → Save. Admin → Groups → team_beta → properties shows `memory_max` and `cpu_quota`. A team_beta user's next start gets it (Hub log: `MemoryMax=3G (team)`). Empty both boxes → Save → the properties are gone.
+- [ ] B8. Limits: a bad value (`2 gigs`) is refused with a message; Terminal off still works for one user; a normal user gets 403 on `/hub/limits`.
+- [ ] B9. Dark mode and a phone (or a narrow window): both pages readable, nothing cut off.
+
+### C. A fresh install (must) — about 40 minutes, 2 new instances
+
+One new Hub VM and one new worker VM (Ubuntu 26.04), nothing installed. Tests the trimmed `nodejs`/`npm` install and the guide.
+
+- [ ] C1. Follow [docs/ADMIN.md → Install](docs/ADMIN.md#install-hub-and-first-worker) exactly, with the install line above in place of the PyPI one. Note anything the guide gets wrong.
+- [ ] C2. `install-hub`: step "1. OS packages" is clearly faster than on 2026-11-10; `configurable-http-proxy --version` works; the closing message points to `docs/ADMIN.md`.
+- [ ] C3. `install-worker` on a machine without a GPU prints `No NVIDIA GPU on this machine: no driver needed.`
+- [ ] C4. Test login behind Caddy, start a server, the worker's card is on `/hub/monitoring`.
+- [ ] C5. `aws --version` still works on a machine with the apt `awscli` after the pip install (skip if not installed).
+
+### D. A GPU worker (must for "GPU tested"; else ship it marked "not yet tested") — about 40 minutes
+
+One GPU instance as a third worker, for example `g4dn.xlarge` (x86, Tesla T4) with plain Ubuntu 26.04, 40 GiB disk. It costs more per hour than the others: stop it after the test.
+
+- [ ] D1. `install-worker` prints `NVIDIA GPU found without a working driver` and installs it; at the end it asks for a reboot. Note how long it took.
+- [ ] D2. After `sudo reboot`: `nvidia-smi` lists the card. `sudo journalctl -u jupyterhub_pilot-metrics -n 20` has no `nvidia-smi found but not working`.
+- [ ] D3. Hub: `sudo jupyterhub-pilot add-worker team_gpu <ip>`, create the group, add a user. The card shows `GPU <model>`, a GPU meter with temperature, and the GPU memory tile appears.
+- [ ] D4. In that user's notebook: `!nvidia-smi` works. `pip install --user --break-system-packages torch`, then `import torch; x = torch.zeros(1024, 1024, 1024, device="cuda")` (4 GB): the user's row shows about 4 GB under GPU memory within 10 seconds.
+- [ ] D5. Fill the card to 90% or more: "Needs attention" lists the GPU. Restart the kernel: it clears.
+- [ ] D6. `/hub/limits` shows `GPU <model>` in team_gpu's Worker column. The other workers still say "no GPU".
+- [ ] D7. *Later:* the same on Arm (`g5g.xlarge`) and with an AWS Deep Learning image (driver already there: expect `driver working`, no install).
+
+### E. Features never run on a cluster (later; not changed in 0.8.0)
+
+Each has its steps where linked. Do as many as time allows; none blocks 0.8.0.
+
+- [ ] E1. EFS shared homes: the checks under "Users in more than one team" below (same uid **and** gid on both workers first).
+- [ ] E2. Two-team user: "Which team?" on the start page; lands on the chosen worker with that team's limit.
+- [ ] E3. Worker reboot with a server running: the Hub shows it stopped within 30 s and Start works.
+- [ ] E4. [Test a cluster](docs/ADMIN.md#test-a-cluster) steps 5 (idle stop) and 6 (Vault); `load-test --cleanup` archives homes in `/home/.deleted`.
+- [ ] E5. Prometheus: scrape `/hub/monitoring/metrics` with the token; on the GPU worker the `worker_gpu_*` lines are there.
+- [ ] E6. In a notebook: `team/` and `shared/` folders, `%schedule add "*:0/2" test.ipynb`, New → Terminal, the Git tab in `/lab`, `%sql duckdb://`, `%do` with a real model.
+
+### F. Release (after A–C pass, and D or a "not yet tested" note)
+
+- [ ] F1. Fixes from the test are merged to `main`; CI green; `CHANGELOG.md` has the date; `docs/FEATURES.md` says what was tested.
+- [ ] F2. On `main`: `python -m build`, `twine check --strict dist/jupyterhub_pilot-0.8.0*`.
+- [ ] F3. Upload from `~/projects/Github/JupyterPilot`: `.venv/bin/python -m twine upload dist/jupyterhub_pilot-0.8.0*`.
+- [ ] F4. Tag `v0.8.0` on the commit that was built, GitHub release with the dist files.
+- [ ] F5. On the test cluster: `sudo jupyterhub-pilot upgrade` (now from PyPI) reports 0.8.0 and changes nothing.
+
 ## 2026-11-10 test: 0.7.0 from PyPI, 1 Hub + 2 workers (ap-south-1, Ubuntu 26.04 Arm)
 
 Findings so far; fixes go into 0.7.1.
