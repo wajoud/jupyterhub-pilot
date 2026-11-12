@@ -20,9 +20,10 @@ from jupyterhub_pilot.monitoring_handler import (
     PrometheusHandler,
     UsageHistoryHandler,
 )
+from jupyterhub_pilot.secrets_page import SecretsPageHandler
 from jupyterhub_pilot.paths import CONFIG_DIR, PACKAGE_DIR
 from jupyterhub_pilot.spawner import _store, CustomSpawner, worker_ip_for_group
-from jupyterhub_pilot.vault_client import start_renewer
+from jupyterhub_pilot.vault_client import VaultClient, start_renewer
 
 with open(os.path.join(CONFIG_DIR, "hub_settings.json"), "r") as f:
     hub_settings = json.load(f)
@@ -44,6 +45,7 @@ c.JupyterHub.hub_bind_url = hub_settings["hub_bind_url"]
 
 # Monitoring link in the nav bar: templates/page.html extends JupyterHub's own page.
 c.JupyterHub.template_paths = [os.path.join(PACKAGE_DIR, "templates")]
+c.JupyterHub.template_vars = {"pilot_secrets": bool(hub_settings.get("vault_enabled"))}  # Secrets link for admins
 
 c.ConfigurableHTTPProxy.api_url = hub_settings["proxy_api_url"]
 
@@ -152,6 +154,17 @@ c.JupyterHub.extra_handlers = [
             "worker_ip_for_group": worker_ip_for_group,
             "defaults": lambda: hub_settings.get("resource_limits"),
             "snapshots": monitoring_handler._WORKER_SNAPSHOTS,  # the limit each running server really has
+        },
+    ),
+    # Vault variables per team and per user, names only (admins only)
+    (
+        r"/secrets",
+        SecretsPageHandler,
+        {
+            "enabled": lambda: bool(hub_settings.get("vault_enabled")),
+            "vault": lambda: VaultClient(hub_settings.get("vault_secret_path", "secret/jupyterhub-pilot")),
+            "worker_ip_for_group": worker_ip_for_group,
+            "snapshots": monitoring_handler._WORKER_SNAPSHOTS,  # which servers run, and since when
         },
     ),
 ]

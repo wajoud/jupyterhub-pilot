@@ -9,7 +9,7 @@ import subprocess
 
 import pytest
 
-from jupyterhub_pilot import limits
+from jupyterhub_pilot import limits, secrets_page
 
 PKG = os.path.join(os.path.dirname(__file__), "..", "jupyterhub_pilot")
 SCRIPTS = sorted(glob.glob(os.path.join(PKG, "scripts", "*.sh")))  # install_hub.sh, install_worker.sh, ...
@@ -60,3 +60,23 @@ def test_limits_template_renders_what_build_view_gives_it():
     html = env.get_template("limits.html").render(base_url="/hub/", xsrf_token="x", error="", message="", **view)
     assert "team team_alpha" in html and "512 MB of 1.0 GB" in html and "still on the old limit" in html
     assert "<b>eve</b>" not in html  # user names are escaped
+
+
+def test_secrets_template_renders_names_and_never_trusts_them():
+    jinja2 = pytest.importorskip("jinja2")
+    pages = {"page.html": "{% block main %}{% endblock %}"}
+    with open(os.path.join(PKG, "templates", "secrets.html")) as fh:
+        pages["secrets.html"] = fh.read()
+    env = jinja2.Environment(loader=jinja2.DictLoader(pages), autoescape=True, undefined=jinja2.StrictUndefined)
+    view = secrets_page.build_view(
+        [("bob", {"team_alpha": {}}), ("o'<b>eve</b>", {})], [("team_alpha", {}, 1)], {"team_alpha": "10.0.1.5"}.get,
+        {"w": {"users": [{"name": "bob", "uptime_s": 9999}]}},
+        {"bob": (["API_KEY"], "2026-11-12T10:00:00Z"), "o'<b>eve</b>": (["x'y"], "")}, {"team_alpha": (["REGION"], "")},
+        secrets_page._epoch("2026-11-12T10:00:00Z") + 60,
+    )
+    render = env.get_template("secrets.html").render
+    html = render(base_url="/hub/", xsrf_token="x", error="", message="", off=False, **view)
+    assert "API_KEY" in html and "REGION" in html and "restart needed" in html
+    assert "<b>eve</b>" not in html and "x'y" not in html  # names are escaped, also inside attributes
+    assert 'type="password"' in html and "Vault is off" not in html
+    assert "Vault is off" in render(base_url="/hub/", xsrf_token="x", error="", message="", off=True, teams=[], users=[])

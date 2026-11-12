@@ -41,6 +41,7 @@ Everything a JupyterHub-Pilot cluster can do, by where it runs: the **Hub** (one
 | Feature | What it does | How | Release | EC2 |
 |---|---|---|---|---|
 | Vault secrets | Each user's keys and passwords from HashiCorp Vault become environment variables in their notebook | `vault_enabled`, `VAULT_ADDR`/`VAULT_TOKEN` ([walkthrough](SECURITY.md#4-vault-secret-injection)) | 0.5.1 (docs 0.6.0) | Not yet |
+| Secrets page and team secrets | Admins add, replace and delete Vault variables per team and per user in the browser; names only, never values | `/hub/secrets` (needs the wider Vault policy, [step 2](SECURITY.md#4-vault-secret-injection)) | 0.9.0 | Not yet |
 | Secrets never on the command line | The Hub sends tokens and secrets to the worker over SSH stdin, so `ps` on the worker can't show them | Automatic | 0.5.1 | Tested |
 
 ### Monitoring and operations

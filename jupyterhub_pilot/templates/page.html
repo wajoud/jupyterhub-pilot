@@ -9,5 +9,10 @@
   <li class="nav-item">
     <a class="nav-link" href="{{ base_url }}limits">Limits</a>
   </li>
+  {% if pilot_secrets %}
+  <li class="nav-item">
+    <a class="nav-link" href="{{ base_url }}secrets">Secrets</a>
+  </li>
+  {% endif %}
   {% endif %}
 {% endblock nav_bar_left_items %}
