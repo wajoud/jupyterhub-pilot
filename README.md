@@ -73,7 +73,7 @@ Example data: two teams, one worker with a GPU and one without.
 
 ![Limits page: a Teams table with each worker's size and limit boxes, and a Users table with the limit each user gets](docs/images/limits.png)
 
-**Secrets** (from 0.9.0, needs Vault). API keys and passwords for a team or a user, set in the browser and given to their notebooks as environment variables. The page shows names only, never values.
+**Secrets** (from 0.8.0, needs Vault). API keys and passwords for a team or a user, set in the browser and given to their notebooks as environment variables. The page shows names only, never values.
 
 ![Secrets page: a Teams table and a Users table with each one's variable names, a delete button per name, and boxes to add a name and value](docs/images/secrets.png)
 

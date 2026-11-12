@@ -57,6 +57,17 @@ One GPU instance as a third worker, for example `g4dn.xlarge` (x86, Tesla T4) wi
 - [ ] D6. `/hub/limits` shows `GPU <model>` in team_gpu's Worker column. The other workers still say "no GPU".
 - [ ] D7. *Later:* the same on Arm (`g5g.xlarge`) and with an AWS Deep Learning image (driver already there: expect `driver working`, no install).
 
+### G. Secrets page and team secrets (must for "Secrets tested"; else ship it marked "not yet tested") — about 30 minutes
+
+On the upgraded cluster. Vault and this page have never run against a real Vault or a real JupyterHub.
+
+- [ ] G1. Vault in dev mode on the Hub, policy and token from [Security → Vault](docs/SECURITY.md#4-vault-secret-injection) steps 1–3. **Secrets** shows in the top bar for an admin, not for a normal user (who gets 403 on `/hub/secrets`).
+- [ ] G2. Add `TEST_SECRET` for one user on the page, start their server: `os.environ["TEST_SECRET"]` in a notebook. `vault kv get secret/jupyterhub-pilot/<user>` shows it.
+- [ ] G3. Add `TEAM_KEY` for team_alpha: a team_alpha user gets it after a restart (the ▲ note shows before), a team_beta user does not. A user's own `TEAM_KEY` wins.
+- [ ] G4. Delete with ×: gone from the page and from `vault kv get`; deleting the last one removes the secret.
+- [ ] G5. With the old read-only policy the page says "Vault refused this" and servers still get their secrets. With Vault stopped it says "Cannot reach Vault".
+- [ ] G6. Vault off (`vault_enabled` false): no Secrets link; `/hub/secrets` says how to turn it on.
+
 ### E. Features never run on a cluster (later; not changed in 0.8.0)
 
 Each has its steps where linked. Do as many as time allows; none blocks 0.8.0.
@@ -68,24 +79,13 @@ Each has its steps where linked. Do as many as time allows; none blocks 0.8.0.
 - [ ] E5. Prometheus: scrape `/hub/monitoring/metrics` with the token; on the GPU worker the `worker_gpu_*` lines are there.
 - [ ] E6. In a notebook: `team/` and `shared/` folders, `%schedule add "*:0/2" test.ipynb`, New → Terminal, the Git tab in `/lab`, `%sql duckdb://`, `%do` with a real model.
 
-### F. Release (after A–C pass, and D or a "not yet tested" note)
+### F. Release (after A–C pass, and D and G each pass or get a "not yet tested" note)
 
 - [ ] F1. Fixes from the test are merged to `main`; CI green; `CHANGELOG.md` has the date; `docs/FEATURES.md` says what was tested.
 - [ ] F2. On `main`: `python -m build`, `twine check --strict dist/jupyterhub_pilot-0.8.0*`.
 - [ ] F3. Upload from `~/projects/Github/JupyterPilot`: `.venv/bin/python -m twine upload dist/jupyterhub_pilot-0.8.0*`.
 - [ ] F4. Tag `v0.8.0` on the commit that was built, GitHub release with the dist files.
 - [ ] F5. On the test cluster: `sudo jupyterhub-pilot upgrade` (now from PyPI) reports 0.8.0 and changes nothing.
-
-## 0.9.0: Secrets page and team secrets (branch `feature/secrets-page`)
-
-Built, tests pass, never run against a real Vault or a real JupyterHub. Test on the cluster after 0.8.0 is out:
-
-- [ ] G1. Vault in dev mode on the Hub, policy and token from [Security → Vault](docs/SECURITY.md#4-vault-secret-injection) steps 1–3. **Secrets** shows in the top bar for an admin, not for a normal user (who gets 403 on `/hub/secrets`).
-- [ ] G2. Add `TEST_SECRET` for one user on the page, start their server: `os.environ["TEST_SECRET"]` in a notebook. `vault kv get secret/jupyterhub-pilot/<user>` shows it.
-- [ ] G3. Add `TEAM_KEY` for team_alpha: a team_alpha user gets it after a restart (the ▲ note shows before), a team_beta user does not. A user's own `TEAM_KEY` wins.
-- [ ] G4. Delete with ×: gone from the page and from `vault kv get`; deleting the last one removes the secret.
-- [ ] G5. With the old read-only policy the page says "Vault refused this" and servers still get their secrets. With Vault stopped it says "Cannot reach Vault".
-- [ ] G6. Vault off (`vault_enabled` false): no Secrets link; `/hub/secrets` says how to turn it on.
 
 ## 2026-11-10 test: 0.7.0 from PyPI, 1 Hub + 2 workers (ap-south-1, Ubuntu 26.04 Arm)
 
