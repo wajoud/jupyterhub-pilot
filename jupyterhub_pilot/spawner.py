@@ -544,6 +544,7 @@ class CustomSpawner(Spawner):
         if hub_settings.get("vault_enabled", False):
             vault = VaultClient(secret_base_path=hub_settings.get("vault_secret_path", "secret/jupyterhub-pilot"))
             # In a thread: a slow or dead Vault must not freeze the Hub for every user.
+
             def fetch() -> Dict[str, Any]:  # the team's secrets first, the user's own win
                 both = vault.get_user_secrets(secret_path("team", team)) if team not in ("", ".", "..") else {}
                 return {**both, **vault.get_user_secrets(username)}
