@@ -2,19 +2,14 @@
 
 Each release says where to upgrade (**Hub**, **workers**, or both) and whether a restart is needed. Upgrade with `sudo jupyterhub-pilot upgrade` on each machine (Admin guide → Upgrading).
 
-## 0.9.0 (not released yet)
+## 0.8.0 (not released yet)
 
-**Upgrade: Hub only.** Hub restart needed. To use the new page, write the Vault policy again (Security → Vault, step 2).
+**Upgrade: Hub and every worker** (workers for the GPU numbers and per-user process counts). Hub restart needed. To use the Secrets page with an existing Vault, write the Vault policy again (Security → Vault, step 2).
 
+Hub:
 - **Secrets page** (`/hub/secrets`, admins, shown when Vault is on): add, replace and delete the Vault variables of a team or a user from the browser. It shows names only, never values, and marks users who must restart to get a change.
 - **Team secrets:** variables stored at `<vault_secret_path>/_team/<team>` go to every member's server. A user's own variable with the same name wins.
 - A Vault key that is not a valid variable name is now skipped with a warning (it used to go into the start script as it was).
-
-## 0.8.0 (not released yet)
-
-**Upgrade: Hub and every worker** (workers for the GPU numbers and per-user process counts). Hub restart needed.
-
-Hub:
 - **Limits page redone:** every user with the limit they get and where it comes from (user, team or default), what their running server uses, and a mark when it is still on an older limit. Team limits are set on the same page. Saving a user's row with empty boxes now clears their limits (was an error).
 - **Monitoring page shows more:** worker cards titled with the team name, each worker's size, one bar per CPU core, the busiest users right now, GPU and fullest-disk totals, what the memory limits on a worker add up to.
 - **Usage history:** a "1 hour" range (a new cluster no longer looks empty), totals for the chosen period, and a **Most active users** table for admins.

@@ -92,8 +92,8 @@ alice clicks Start My Server
 ```
 
 - Secrets are read **once, at server start**. After you change a user's secret, they stop and start their server.
-- A user's path is `<vault_secret_path>/<Hub user name>` (the name in the Admin list, e.g. `alice` or `first.last`). A team's path is `<vault_secret_path>/_team/<team>`: its variables go to every member's server (0.9.0).
-- Admins add, replace and delete variables on the **Secrets** page (`/hub/secrets`, 0.9.0). It shows names only, never values.
+- A user's path is `<vault_secret_path>/<Hub user name>` (the name in the Admin list, e.g. `alice` or `first.last`). A team's path is `<vault_secret_path>/_team/<team>`: its variables go to every member's server (0.8.0).
+- Admins add, replace and delete variables on the **Secrets** page (`/hub/secrets`, 0.8.0). It shows names only, never values.
 - A name that is not a valid environment variable name (letters, digits, `_`) is skipped with a warning in the Hub log.
 - Vault is optional and never blocks a start: if Vault is down or the token is wrong, the server starts without secrets and the Hub logs a warning.
 
@@ -153,7 +153,7 @@ POLICY
 vault token create -policy=jupyterhub-pilot -no-default-policy -orphan -period=768h -field=token
 ```
 
-Upgrading from before 0.9.0: run the `vault policy write` above again to use the Secrets page. The token stays the same and no restart is needed.
+Upgrading from before 0.8.0: run the `vault policy write` above again to use the Secrets page. The token stays the same and no restart is needed.
 
 The Hub renews the token itself: at every start and then once a day (no cron job). If the Hub is off for more than 32 days, create a new token. A policy written before 0.7.0 lacks the `renew-self` path: run the `vault policy write` above again (existing tokens pick it up), otherwise the Hub log says `token renewal refused`.
 
