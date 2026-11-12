@@ -63,7 +63,7 @@ from jupyterhub_pilot import limits as _limits
 from jupyterhub_pilot.admin import RBACManager
 from jupyterhub_pilot.paths import CONFIG_DIR, GET_PORT_CMD
 from jupyterhub_pilot.session_store import SessionStore
-from jupyterhub_pilot.vault_client import VaultClient
+from jupyterhub_pilot.vault_client import ENV_NAME_RE, VaultClient, secret_path
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Module-level config bootstrap
@@ -542,12 +542,17 @@ class CustomSpawner(Spawner):
 
         # ── Task 3: Vault secret injection ────────────────────────────────────
         if hub_settings.get("vault_enabled", False):
-            secret_path: str = hub_settings.get(
-                "vault_secret_path", "secret/jupyterhub-pilot"
-            )
-            vault = VaultClient(secret_base_path=secret_path)
+            vault = VaultClient(secret_base_path=hub_settings.get("vault_secret_path", "secret/jupyterhub-pilot"))
             # In a thread: a slow or dead Vault must not freeze the Hub for every user.
-            secrets = await asyncio.to_thread(vault.get_user_secrets, username)
+            def fetch() -> Dict[str, Any]:  # the team's secrets first, the user's own win
+                both = vault.get_user_secrets(secret_path("team", team)) if team not in ("", ".", "..") else {}
+                return {**both, **vault.get_user_secrets(username)}
+
+            secrets = await asyncio.to_thread(fetch)
+            for bad in [k for k in secrets if not ENV_NAME_RE.fullmatch(k)]:
+                # Names go unquoted into `export NAME=...` on the worker.
+                self.log.warning("CustomSpawner: Vault secret %r of '%s' skipped: not a variable name", bad, username)
+                del secrets[bad]
             if secrets:
                 # Merge into self.environment; get_env() picks this up at launch
                 self.environment.update(secrets)

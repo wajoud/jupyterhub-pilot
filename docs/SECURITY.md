@@ -83,14 +83,18 @@ No code changes, no restarts — promote a user to admin live via the JupyterHub
 
 ```text
 alice clicks Start My Server
-  → the Hub reads secret/jupyterhub-pilot/alice from Vault (KV v2), using the Hub's token
+  → the Hub reads secret/jupyterhub-pilot/_team/<alice's team> and then
+    secret/jupyterhub-pilot/alice from Vault (KV v2), using the Hub's token
+    (alice's own value wins over the team's with the same name)
   → the key/values are added to alice's server environment
   → the Hub sends them to the worker over SSH stdin (never on the command line, so `ps` can't show them)
   → in alice's notebook: os.environ["OPENAI_API_KEY"]
 ```
 
 - Secrets are read **once, at server start**. After you change a user's secret, they stop and start their server.
-- The path is `<vault_secret_path>/<Hub user name>` (the name in the Admin list, e.g. `alice` or `first.last`).
+- A user's path is `<vault_secret_path>/<Hub user name>` (the name in the Admin list, e.g. `alice` or `first.last`). A team's path is `<vault_secret_path>/_team/<team>`: its variables go to every member's server (0.9.0).
+- Admins add, replace and delete variables on the **Secrets** page (`/hub/secrets`, 0.9.0). It shows names only, never values.
+- A name that is not a valid environment variable name (letters, digits, `_`) is skipped with a warning in the Hub log.
 - Vault is optional and never blocks a start: if Vault is down or the token is wrong, the server starts without secrets and the Hub logs a warning.
 
 ### Who can see what
@@ -101,7 +105,7 @@ alice clicks Start My Server
 | Other users on the same worker | Nothing: another user's process environment (`/proc/<pid>/environ`) is readable only by that user and root |
 | Admins in the Hub | Nothing through the Hub (`admin_access` is off) |
 | Root on the worker | The user's secrets while their server runs |
-| Root on the Hub | **Every** user's secrets: the Hub's Vault token is in `/etc/jupyterhub-pilot/hub.env` (root only). Give it read-only access to this one path, nothing else |
+| Root on the Hub | **Every** user's secrets: the Hub's Vault token is in `/etc/jupyterhub-pilot/hub.env` (root only). Give it access to this one path, nothing else. With the Secrets page policy below, root on the Hub can also change them |
 
 **Scheduled notebooks** (`%schedule`) are the one place a secret is written to disk: `%schedule add` saves the secrets the server got into `~/.config/jupyterhub-pilot/jobs/<job>.env` (mode `600`, only the user and root can read it) so the timed run gets them too. `%schedule delete` removes the file.
 
@@ -127,12 +131,17 @@ vault secrets enable -path=secret kv-v2
 
 Run Vault on a private IP only; the Hub is its only client.
 
-### Step 2: a read-only policy and token for the Hub
+### Step 2: a policy and token for the Hub
 
 ```bash
 vault policy write jupyterhub-pilot - << 'POLICY'
+# "read" alone is enough to give servers their secrets. The rest is for the Secrets page;
+# leave it out and the page shows "Vault refused this" (manage secrets with the vault command then).
 path "secret/data/jupyterhub-pilot/*" {
-  capabilities = ["read"]
+  capabilities = ["read", "create", "update"]
+}
+path "secret/metadata/jupyterhub-pilot/*" {
+  capabilities = ["list", "delete"]
 }
 # Lets the Hub renew its own token (-no-default-policy below takes this away otherwise)
 path "auth/token/renew-self" {
@@ -143,6 +152,8 @@ POLICY
 # Periodic token: lives as long as it is renewed within 32 days.
 vault token create -policy=jupyterhub-pilot -no-default-policy -orphan -period=768h -field=token
 ```
+
+Upgrading from before 0.9.0: run the `vault policy write` above again to use the Secrets page. The token stays the same and no restart is needed.
 
 The Hub renews the token itself: at every start and then once a day (no cron job). If the Hub is off for more than 32 days, create a new token. A policy written before 0.7.0 lacks the `renew-self` path: run the `vault policy write` above again (existing tokens pick it up), otherwise the Hub log says `token renewal refused`.
 
@@ -162,9 +173,11 @@ sudo systemctl restart jupyterhub
 
 The restart stops running servers.
 
-### Step 4: add a user's secrets
+### Step 4: add secrets
 
-With an admin token (not the Hub's read-only one):
+In the Hub: **Secrets** in the top bar (admins only). Type a name and a value next to a team or a user and press Save. Saving an existing name replaces its value; the × next to a name deletes it. A ▲ note marks users whose server started before the last change.
+
+Or with the `vault` command and an admin token:
 
 ```bash
 vault kv put secret/jupyterhub-pilot/alice \
@@ -174,6 +187,7 @@ vault kv put secret/jupyterhub-pilot/alice \
 vault kv patch secret/jupyterhub-pilot/alice S3_BUCKET="alice-data"   # add one key
 vault kv get secret/jupyterhub-pilot/alice                           # check
 vault kv metadata delete secret/jupyterhub-pilot/alice               # remove all of alice's secrets
+vault kv put secret/jupyterhub-pilot/_team/team_alpha OPENAI_API_KEY="sk-team-..."   # for everyone in team_alpha
 ```
 
 Keys become environment variable names, so use `UPPER_CASE` names without spaces or dashes.

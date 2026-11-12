@@ -37,9 +37,11 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 import time
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import quote
 
 import requests
 
@@ -47,6 +49,20 @@ log = logging.getLogger("jupyterhub")
 
 # Connection timeout for Vault HTTP calls (seconds)
 _VAULT_TIMEOUT: int = 5
+
+# Environment variable names only: the spawner writes `export NAME=...` into a shell script on the worker.
+ENV_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+class VaultError(Exception):
+    """A Vault call for the Secrets page failed; the message is written for the admin."""
+
+
+def secret_path(scope: str, name: str) -> str:
+    """Path under the base for a user's or a team's secrets (``alice``, ``_team/team_alpha``)."""
+    if name in ("", ".", ".."):
+        raise VaultError(f"{name!r} is not a valid name.")
+    return ("_team/" if scope == "team" else "") + quote(name, safe="")
 
 
 class VaultClient:
@@ -72,6 +88,7 @@ class VaultClient:
         parts = secret_base_path.split("/", 1)
         mount = parts[0]
         subpath = parts[1] if len(parts) > 1 else ""
+        self._mount, self._sub = mount, subpath
         self._base: str = (
             f"/v1/{mount}/data/{subpath}" if subpath else f"/v1/{mount}/data"
         )
@@ -102,6 +119,47 @@ class VaultClient:
                 r.status_code,
             )
         return r.ok
+
+    # -- For the Secrets page: errors are raised, not swallowed -------------------
+
+    def _call(self, method: str, kind: str, path: str = "", **kwargs: Any) -> Optional[Dict[str, Any]]:
+        """One KV v2 request (*kind* is ``data`` or ``metadata``). None when nothing is stored there."""
+        if not self.is_configured():
+            raise VaultError("VAULT_ADDR and VAULT_TOKEN are not set in /etc/jupyterhub-pilot/hub.env.")
+        url = "/".join(p for p in (self._addr, "v1", self._mount, kind, self._sub, path) if p)
+        try:
+            r = requests.request(
+                method, url, headers={"X-Vault-Token": self._token}, timeout=_VAULT_TIMEOUT, **kwargs
+            )
+        except requests.exceptions.RequestException as exc:
+            raise VaultError(f"Cannot reach Vault at {self._addr} ({type(exc).__name__}).") from exc
+        if r.status_code == 404:
+            return None
+        if r.status_code == 403:
+            raise VaultError(
+                "Vault refused this: the Hub's token may only read. "
+                "Write the policy in docs/SECURITY.md §4 step 2 again to let this page list and change secrets."
+            )
+        if not r.ok:
+            raise VaultError(f"Vault returned HTTP {r.status_code}.")
+        return r.json() if r.content else {}
+
+    def list_names(self) -> List[str]:
+        """Names that have secrets directly under the base path (the users)."""
+        found = self._call("GET", "metadata", params={"list": "true"}) or {}
+        return [k for k in found.get("data", {}).get("keys", []) if not k.endswith("/")]
+
+    def read(self, path: str) -> Tuple[Dict[str, Any], str]:
+        """(key/values, time of the last change as Vault writes it) at *path*; ({}, "") when nothing is stored."""
+        found = (self._call("GET", "data", path) or {}).get("data") or {}
+        return found.get("data") or {}, (found.get("metadata") or {}).get("created_time", "")
+
+    def write(self, path: str, data: Dict[str, str]) -> None:
+        """Replace everything at *path*; an empty dict removes the secret with all its old versions."""
+        if data:
+            self._call("POST", "data", path, json={"data": data})
+        else:
+            self._call("DELETE", "metadata", path)
 
     def get_user_secrets(self, username: str) -> Dict[str, Any]:
         """

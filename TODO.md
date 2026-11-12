@@ -76,6 +76,17 @@ Each has its steps where linked. Do as many as time allows; none blocks 0.8.0.
 - [ ] F4. Tag `v0.8.0` on the commit that was built, GitHub release with the dist files.
 - [ ] F5. On the test cluster: `sudo jupyterhub-pilot upgrade` (now from PyPI) reports 0.8.0 and changes nothing.
 
+## 0.9.0: Secrets page and team secrets (branch `feature/secrets-page`)
+
+Built, tests pass, never run against a real Vault or a real JupyterHub. Test on the cluster after 0.8.0 is out:
+
+- [ ] G1. Vault in dev mode on the Hub, policy and token from [Security → Vault](docs/SECURITY.md#4-vault-secret-injection) steps 1–3. **Secrets** shows in the top bar for an admin, not for a normal user (who gets 403 on `/hub/secrets`).
+- [ ] G2. Add `TEST_SECRET` for one user on the page, start their server: `os.environ["TEST_SECRET"]` in a notebook. `vault kv get secret/jupyterhub-pilot/<user>` shows it.
+- [ ] G3. Add `TEAM_KEY` for team_alpha: a team_alpha user gets it after a restart (the ▲ note shows before), a team_beta user does not. A user's own `TEAM_KEY` wins.
+- [ ] G4. Delete with ×: gone from the page and from `vault kv get`; deleting the last one removes the secret.
+- [ ] G5. With the old read-only policy the page says "Vault refused this" and servers still get their secrets. With Vault stopped it says "Cannot reach Vault".
+- [ ] G6. Vault off (`vault_enabled` false): no Secrets link; `/hub/secrets` says how to turn it on.
+
 ## 2026-11-10 test: 0.7.0 from PyPI, 1 Hub + 2 workers (ap-south-1, Ubuntu 26.04 Arm)
 
 Findings so far; fixes go into 0.7.1.
