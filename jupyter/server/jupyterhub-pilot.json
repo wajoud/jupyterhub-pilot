@@ -1,0 +1,7 @@
+{
+  "ServerApp": {
+    "jpserver_extensions": {
+      "jupyterhub_pilot.complete": true
+    }
+  }
+}

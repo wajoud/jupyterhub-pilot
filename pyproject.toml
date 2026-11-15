@@ -106,5 +106,14 @@ include = ["jupyterhub_pilot*"]
 [tool.setuptools.package-data]
 jupyterhub_pilot = ["static/*.html", "templates/*.html", "scripts/*.sh"]
 
+# Files Jupyter reads from its own folders on a worker: the suggestions plugin for the
+# notebook page, the setting that shows the completion list while typing, and the
+# line that loads jupyterhub_pilot.complete in each user's notebook server.
+[tool.setuptools.data-files]
+"share/jupyter/labextensions/jupyterhub-pilot-complete" = ["jupyter/labextension/package.json"]
+"share/jupyter/labextensions/jupyterhub-pilot-complete/static" = ["jupyter/labextension/static/remoteEntry.1.js"]
+"share/jupyter/lab/settings/overrides.d" = ["jupyter/settings/jupyterhub-pilot.json"]
+"etc/jupyter/jupyter_server_config.d" = ["jupyter/server/jupyterhub-pilot.json"]
+
 [project.scripts]
 jupyterhub-pilot = "jupyterhub_pilot.cli:main"

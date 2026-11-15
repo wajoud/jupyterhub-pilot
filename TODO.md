@@ -68,6 +68,17 @@ On the upgraded cluster. Vault and this page have never run against a real Vault
 - [ ] G5. With the old read-only policy the page says "Vault refused this" and servers still get their secrets. With Vault stopped it says "Cannot reach Vault".
 - [ ] G6. Vault off (`vault_enabled` false): no Secrets link; `/hub/secrets` says how to turn it on.
 
+### H. Code completion while typing (must for "Completion tested"; else ship it marked "not yet tested") — about 15 minutes
+
+On an upgraded worker, with a server started **after** the worker upgrade. Seen working on 2026-11-15 on a laptop only (Notebook 7.6.5, headless Chrome, a stand-in model), never behind JupyterHub.
+
+- [ ] H1. Worker: `ls /usr/local/share/jupyter/labextensions/jupyterhub-pilot-complete /usr/local/share/jupyter/lab/settings/overrides.d /usr/local/etc/jupyter/jupyter_server_config.d` lists the three sets of files. If they are somewhere else, note where (`jupyter --paths`).
+- [ ] H2. In a notebook, run `import os`, then type `os.pa` in a new cell: the list opens without Tab.
+- [ ] H3. With a model reachable (Ollama on the worker, or cloud mode): type `total = ` under a cell that defines a variable, wait a second: grey text appears, Tab accepts it. Note how long it took and the worker's CPU on `/hub/monitoring` while typing for a minute.
+- [ ] H4. With no model reachable: nothing appears, typing is not slowed, and the user's server log on the worker (`~/.jupyterhub-pilot-*.log`) has one "Code suggestions paused" line per minute at most.
+- [ ] H5. `{"autocomplete": {"enabled": false}}` in `/etc/jupyterhub-pilot/config.json`, restart the server: the list still opens, no grey text.
+- [ ] H6. The same in `/lab` (JupyterLab).
+
 ### E. Features never run on a cluster (later; not changed in 0.8.0)
 
 Each has its steps where linked. Do as many as time allows; none blocks 0.8.0.
@@ -79,7 +90,7 @@ Each has its steps where linked. Do as many as time allows; none blocks 0.8.0.
 - [ ] E5. Prometheus: scrape `/hub/monitoring/metrics` with the token; on the GPU worker the `worker_gpu_*` lines are there.
 - [ ] E6. In a notebook: `team/` and `shared/` folders, `%schedule add "*:0/2" test.ipynb`, New → Terminal, the Git tab in `/lab`, `%sql duckdb://`, `%do` with a real model.
 
-### F. Release (after A–C pass, and D and G each pass or get a "not yet tested" note)
+### F. Release (after A–C pass, and D, G and H each pass or get a "not yet tested" note)
 
 - [ ] F1. Fixes from the test are merged to `main`; CI green; `CHANGELOG.md` has the date; `docs/FEATURES.md` says what was tested.
 - [ ] F2. On `main`: `python -m build`, `twine check --strict dist/jupyterhub_pilot-0.8.0*`.

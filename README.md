@@ -15,6 +15,7 @@ One JupyterHub for many teams. Each team gets its own worker VM, every user gets
 - **Any worker size, with or without a GPU.** The GPU is found automatically.
 - **Live monitoring and 15 days of usage history**, per worker and per user.
 - **AI magics in every notebook:** `%do`, `%fix`, `%review`, `%rework`, `%explain`.
+- **Code completion while you type:** a list of names, and a grey AI suggestion you accept with Tab.
 - **For analysts:** team folders, scheduled notebooks, Git, a terminal, the same data packages on every worker.
 - **One command per machine** to install, and one to upgrade.
 
@@ -103,6 +104,10 @@ Example data: two teams, one worker with a GPU and one without.
 | `%schedule add daily report.ipynb` | Runs a notebook on a schedule |
 
 It works with a local Ollama, OpenAI, Claude or Gemini: [AI magics](docs/AI_MAGICS.md).
+
+As you type, the same model suggests the next piece of code in grey; Tab accepts it. One short request at a time per user, and it can be turned off: [Code completion](docs/USING.md#code-completion-while-you-type).
+
+![A notebook cell where the user typed "total = " and the grey suggestion "numbers_sum * 2" follows the cursor](docs/images/autocomplete.png)
 
 ## Guides
 

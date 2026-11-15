@@ -26,6 +26,25 @@ The magics see the column names and dtypes of DataFrames in memory, so `%do plot
 
 The LLM backend is set in `~/.jupyterhub-pilot/config.json` (per user) or `/etc/jupyterhub-pilot/config.json` (whole worker). The default is a local Ollama at `http://localhost:11434`. Setup, auto-loading for all users and cloud/MCP backends: [AI Magic Commands](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/AI_MAGICS.md).
 
+### Code completion while you type
+
+Two things happen as you type in a code cell (new in 0.8.0; restart your server once after the upgrade):
+
+- **A list of names** opens by itself: variables, functions, methods after a dot. Enter or Tab takes the marked one, Esc closes it. Before, it needed the Tab key.
+- **A grey suggestion** from the AI model appears ahead of the cursor after you stop typing for a moment. Tab accepts it; keep typing to ignore it. It knows the code cells above the one you are in.
+
+The grey suggestion uses the same model as the magics. It is kept light: it asks only after a 0.7 second pause, one request at a time per user, the answer is cut at 64 tokens and 8 seconds, and after a failed request (no model running, for example) it stays quiet for a minute.
+
+To change it, add this to `config.json` and restart your server:
+
+```json
+{"autocomplete": {"enabled": false, "model": "qwen2.5-coder:1.5b"}}
+```
+
+`enabled: false` turns the grey suggestions off. `model` gives them a smaller, faster model than the magics use; leave it out to use the same one. With a local Ollama on a worker without a GPU, a small model (or off) is the right choice: each suggestion uses the worker's CPUs for a few seconds. With a cloud model, the code around the cursor is sent to that provider, as with the magics.
+
+Each user can also switch either one off for themselves: **Settings → Settings Editor → Code Completion** (the list) and **Inline Completer** (the grey text).
+
 ### Terminal and JupyterLab
 
 Notebook 7 is built on JupyterLab, so both come with the worker install:

@@ -76,6 +76,7 @@ Everything a JupyterHub-Pilot cluster can do, by where it runs: the **Hub** (one
 | `%rework` | Rewrites the last cell as instructed (`--diff` to preview) | same | 0.5.1 | — |
 | `%explain` | Explains the last result in plain words | same | 0.6.0 | Not yet |
 | DataFrame-aware AI | The magics see the column names and types of DataFrames in memory (never the data) | Automatic | 0.6.0 | Not yet |
+| Code completion while typing | The list of names opens without Tab; a grey AI suggestion appears ahead of the cursor (Tab accepts), one short request at a time per user | Automatic; `"autocomplete"` in `config.json` ([Code completion](USING.md#code-completion-while-you-type)) | 0.8.0 | Not yet |
 | AI backends | Local Ollama (default), OpenAI / Claude / Gemini through LiteLLM, or an MCP server | `~/.jupyterhub-pilot/config.json` or `/etc/jupyterhub-pilot/config.json` | 0.5.1 | — |
 | `%schedule` | Run a notebook hourly/daily/on any calendar time; results saved next to it as `name-<date>.ipynb`, last N kept; `list`, `run`, `pause`, `resume`, `delete` | `%load_ext jupyterhub_pilot.schedule` ([Scheduled notebooks](USING.md#scheduled-notebooks)) | 0.6.0 | Not yet |
 | SQL in cells | `%sql` over Parquet/CSV files with DuckDB | `%load_ext sql`, `%sql duckdb://` | 0.6.0 | Not yet |

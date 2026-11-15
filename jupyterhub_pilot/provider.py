@@ -56,6 +56,12 @@ _DEFAULT_CONFIG: Dict[str, Any] = {
     "rate_limit": {
         "requests_per_minute": 20,
     },
+    # Grey code suggestions while typing (complete.py). "model": a smaller, faster
+    # model for them; null uses the model of the active mode.
+    "autocomplete": {
+        "enabled": True,
+        "model": None,
+    },
 }
 
 _SYSTEM_PROMPT = (
