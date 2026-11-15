@@ -2,7 +2,7 @@
 
 Everything a JupyterHub-Pilot cluster can do, by where it runs: the **Hub** (one VM: login, routing, admin pages), each team's **worker** (a VM where users' notebooks run), and the **notebook** itself (what users type). How-to steps are in the [admin guide](ADMIN.md) and [Using the notebooks](USING.md); this page is the list.
 
-**Release:** `0.7.0` is on PyPI; it includes the features marked 0.6.0 ([CHANGELOG](../CHANGELOG.md)).
+**Release:** `0.8.0` is on PyPI; it includes everything marked 0.8.0 or earlier ([CHANGELOG](../CHANGELOG.md)).
 **EC2:** **Tested** = checked on a real cluster (2026-11-07/08, Ubuntu 26.04 Arm, JupyterHub 6.2). **Not yet** = unit-tested only; [Admin guide → Test a cluster](ADMIN.md#test-a-cluster) and the EC2 checklist cover it. **—** = no cluster test recorded.
 
 ## Hub

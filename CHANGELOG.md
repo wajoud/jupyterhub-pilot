@@ -2,7 +2,9 @@
 
 Each release says where to upgrade (**Hub**, **workers**, or both) and whether a restart is needed. Upgrade with `sudo jupyterhub-pilot upgrade` on each machine (Admin guide → Upgrading).
 
-## 0.8.0 (not released yet)
+## 0.8.0 (2026-11-15)
+
+Released before its cluster test: the Limits page, GPU workers, the Secrets page and code completion have only run in unit tests and on a laptop. Fixes from the test will come as 0.8.1.
 
 **Upgrade: Hub and every worker** (workers for the GPU numbers and per-user process counts). Hub restart needed. To use the Secrets page with an existing Vault, write the Vault policy again (Security → Vault, step 2).
 
