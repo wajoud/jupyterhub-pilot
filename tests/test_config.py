@@ -115,3 +115,21 @@ def test_idle_cull_off_when_missing_or_null(monkeypatch):
         fresh = _reload_with(monkeypatch, settings)
         # MagicMock auto-creates attributes; check nothing was assigned.
         assert "services" not in vars(fresh.JupyterHub)
+
+
+def test_pages_see_live_worker_data_after_jupyterhub_copies_the_config():
+    """JupyterHub deep-copies its config. A dict passed to a handler would be an empty copy
+    forever (0.8.0: Limits said "not reporting", Secrets said "stopped" for everyone)."""
+    import copy
+
+    from jupyterhub_pilot import monitoring_handler
+
+    handlers = copy.deepcopy(config_mock.JupyterHub.extra_handlers)
+    with_snapshots = [h[2] for h in handlers if len(h) > 2 and "snapshots" in h[2]]
+    assert len(with_snapshots) == 2  # Limits and Secrets
+    monitoring_handler._WORKER_SNAPSHOTS["w1"] = {"ip": "10.0.0.1"}
+    try:
+        for kwargs in with_snapshots:
+            assert kwargs["snapshots"]() == {"w1": {"ip": "10.0.0.1"}}
+    finally:
+        monitoring_handler._WORKER_SNAPSHOTS.pop("w1", None)

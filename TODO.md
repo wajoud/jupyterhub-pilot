@@ -27,11 +27,16 @@ The 2026-11-10 cluster (1 Hub + 2 workers, no GPU). If the instances were stoppe
 
 ### B. The new pages on the upgraded cluster (must) — about 30 minutes
 
-- [ ] B1. `/hub/monitoring` as admin: each card is titled with its team name and shows its size and "no GPU"; one bar per CPU core; the Fullest disk tile; no GPU tile, no GPU column.
-- [ ] B2. Start servers for two users (`jupyterhub-pilot load-test --hub $HUB --teams team_alpha,team_beta --users 4`): "Busiest right now" appears; the cards show processes and "Memory limits add up to".
-- [ ] B3. Usage history: "1 hour" shows the points of the last hour; "Most active users" lists the load-test users; History on a row opens that user; the four totals above the graphs make sense.
-- [ ] B4. The same page as a normal user (test login): only their team's worker and their own row; no "Most active users"; no "Busiest right now".
-- [ ] B5. `/hub/limits` loads and lists **every** user with team, limit and source. (This is the code that never ran on a real JupyterHub.)
+- [x] B1. `/hub/monitoring` as admin: each card is titled with its team name and shows its size and "no GPU"; one bar per CPU core; the Fullest disk tile; no GPU tile, no GPU column.
+  - 2026-11-15: team names, sizes, "no GPU", Fullest disk tile all there (dark mode too).
+- [x] B2. Start servers for two users (`jupyterhub-pilot load-test --hub $HUB --teams team_alpha,team_beta --users 4`): "Busiest right now" appears; the cards show processes and "Memory limits add up to".
+  - 2026-11-15: "Busiest right now" and "Memory limits add up to 2.0 GB of 3.7 GB" show with three servers running (no load-test run).
+- [x] B3. Usage history: "1 hour" shows the points of the last hour; "Most active users" lists the load-test users; History on a row opens that user; the four totals above the graphs make sense.
+  - 2026-11-15: "Most active users" lists the three users with History buttons; one user's totals and graphs show.
+- [x] B4. The same page as a normal user (test login): only their team's worker and their own row; no "Most active users"; no "Busiest right now".
+  - 2026-11-15: a user in team_beta sees their worker; a user in no team sees "No worker is reporting" (clearer wording would help).
+- [x] B5. `/hub/limits` loads and lists **every** user with team, limit and source. (This is the code that never ran on a real JupyterHub.)
+  - 2026-11-15: loads and lists teams and users with limit and source. **Found:** every worker said "not reporting" and every server "stopped" (the same on the Secrets page): JupyterHub deep-copies its config, so the pages held an empty copy of the live data. Fixed in 0.8.1; B6's "still on the old limit" mark and G3's ▲ note could not work in 0.8.0.
 - [ ] B6. Limits, one user: type `2G` in a user's Memory box → Save → "Gets now" says `2G set here`; their running server shows "still on the old limit"; after they restart the mark is gone and `/hub/monitoring` shows 2.0 GB. Clear → back to the team or default.
 - [ ] B7. Limits, a team: set `3G` / `150%` on team_beta → Save. Admin → Groups → team_beta → properties shows `memory_max` and `cpu_quota`. A team_beta user's next start gets it (Hub log: `MemoryMax=3G (team)`). Empty both boxes → Save → the properties are gone.
 - [ ] B8. Limits: a bad value (`2 gigs`) is refused with a message; Terminal off still works for one user; a normal user gets 403 on `/hub/limits`.
@@ -41,10 +46,14 @@ The 2026-11-10 cluster (1 Hub + 2 workers, no GPU). If the instances were stoppe
 
 One new Hub VM and one new worker VM (Ubuntu 26.04), nothing installed. Tests the trimmed `nodejs`/`npm` install and the guide.
 
-- [ ] C1. Follow [docs/ADMIN.md → Install](docs/ADMIN.md#install-hub-and-first-worker) exactly, with the install line above in place of the PyPI one. Note anything the guide gets wrong.
-- [ ] C2. `install-hub`: step "1. OS packages" is clearly faster than on 2026-11-10; `configurable-http-proxy --version` works; the closing message points to `docs/ADMIN.md`.
-- [ ] C3. `install-worker` on a machine without a GPU prints `No NVIDIA GPU on this machine: no driver needed.`
-- [ ] C4. Test login behind Caddy, start a server, the worker's card is on `/hub/monitoring`.
+- [x] C1. Follow [docs/ADMIN.md → Install](docs/ADMIN.md#install-hub-and-first-worker) exactly, with the install line above in place of the PyPI one. Note anything the guide gets wrong.
+  - 2026-11-15: the guide's steps worked; added to the docs: the Caddy step on the PyPI page, `sleep 5` before the Caddy check, Vault commands without placeholders.
+- [x] C2. `install-hub`: step "1. OS packages" is clearly faster than on 2026-11-10; `configurable-http-proxy --version` works; the closing message points to `docs/ADMIN.md`.
+  - 2026-11-15: `configurable-http-proxy` 5.4.0 works and the Hub starts; the speed was not timed.
+- [x] C3. `install-worker` on a machine without a GPU prints `No NVIDIA GPU on this machine: no driver needed.`
+  - 2026-11-15: both workers.
+- [x] C4. Test login behind Caddy, start a server, the worker's card is on `/hub/monitoring`.
+  - 2026-11-15: both teams' servers start, both cards show.
 - [ ] C5. `aws --version` still works on a machine with the apt `awscli` after the pip install (skip if not installed).
 
 ### D. A GPU worker (must for "GPU tested"; else ship it marked "not yet tested") — about 40 minutes
@@ -63,8 +72,10 @@ One GPU instance as a third worker, for example `g4dn.xlarge` (x86, Tesla T4) wi
 
 On the upgraded cluster. Vault and this page have never run against a real Vault or a real JupyterHub.
 
-- [ ] G1. Vault in dev mode on the Hub, policy and token from [Security → Vault](docs/SECURITY.md#4-vault-secret-injection) steps 1–3. **Secrets** shows in the top bar for an admin, not for a normal user (who gets 403 on `/hub/secrets`).
-- [ ] G2. Add `TEST_SECRET` for one user on the page, start their server: `os.environ["TEST_SECRET"]` in a notebook. `vault kv get secret/jupyterhub-pilot/<user>` shows it.
+- [x] G1. Vault in dev mode on the Hub, policy and token from [Security → Vault](docs/SECURITY.md#4-vault-secret-injection) steps 1–3. **Secrets** shows in the top bar for an admin, not for a normal user (who gets 403 on `/hub/secrets`).
+  - 2026-11-15: Secrets shows for the admin with Vault 2.2.2 in dev mode. The normal user's 403 was not checked.
+- [x] G2. Add `TEST_SECRET` for one user on the page, start their server: `os.environ["TEST_SECRET"]` in a notebook. `vault kv get secret/jupyterhub-pilot/<user>` shows it.
+  - 2026-11-15: each user gets their own and their team's variables and nothing else (two users, two teams).
 - [ ] G3. Add `TEAM_KEY` for team_alpha: a team_alpha user gets it after a restart (the ▲ note shows before), a team_beta user does not. A user's own `TEAM_KEY` wins.
 - [ ] G4. Delete with ×: gone from the page and from `vault kv get`; deleting the last one removes the secret.
 - [ ] G5. With the old read-only policy the page says "Vault refused this" and servers still get their secrets. With Vault stopped it says "Cannot reach Vault".
@@ -74,9 +85,12 @@ On the upgraded cluster. Vault and this page have never run against a real Vault
 
 On an upgraded worker, with a server started **after** the worker upgrade. Seen working on 2026-11-15 on a laptop only (Notebook 7.6.5, headless Chrome, a stand-in model), never behind JupyterHub.
 
-- [ ] H1. Worker: `ls /usr/local/share/jupyter/labextensions/jupyterhub-pilot-complete /usr/local/share/jupyter/lab/settings/overrides.d /usr/local/etc/jupyter/jupyter_server_config.d` lists the three sets of files. If they are somewhere else, note where (`jupyter --paths`).
-- [ ] H2. In a notebook, run `import os`, then type `os.pa` in a new cell: the list opens without Tab.
-- [ ] H3. With a model reachable (Ollama on the worker, or cloud mode): type `total = ` under a cell that defines a variable, wait a second: grey text appears, Tab accepts it. Note how long it took and the worker's CPU on `/hub/monitoring` while typing for a minute.
+- [x] H1. Worker: `ls /usr/local/share/jupyter/labextensions/jupyterhub-pilot-complete /usr/local/share/jupyter/lab/settings/overrides.d /usr/local/etc/jupyter/jupyter_server_config.d` lists the three sets of files. If they are somewhere else, note where (`jupyter --paths`).
+  - 2026-11-15: both workers.
+- [x] H2. In a notebook, run `import os`, then type `os.pa` in a new cell: the list opens without Tab.
+  - 2026-11-15: both workers.
+- [x] H3. With a model reachable (Ollama on the worker, or cloud mode): type `total = ` under a cell that defines a variable, wait a second: grey text appears, Tab accepts it. Note how long it took and the worker's CPU on `/hub/monitoring` while typing for a minute.
+  - 2026-11-15: with OpenRouter `openai/gpt-4o-mini`, key from a team secret: about 1 s per suggestion (7 s for the first). **Found:** nothing showed until `jupysql-plugin:syntax-highlighting` was turned off on the worker; fixed in 0.8.1.
 - [ ] H4. With no model reachable: nothing appears, typing is not slowed, and the user's server log on the worker (`~/.jupyterhub-pilot-*.log`) has one "Code suggestions paused" line per minute at most.
 - [ ] H5. `{"autocomplete": {"enabled": false}}` in `/etc/jupyterhub-pilot/config.json`, restart the server: the list still opens, no grey text.
 - [ ] H6. The same in `/lab` (JupyterLab).

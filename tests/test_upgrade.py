@@ -96,3 +96,13 @@ def test_worker_packages_installed_only_when_missing(monkeypatch):
     with patch.object(upgrade.subprocess, "run") as run:
         assert upgrade.install_worker_packages("") == ""
     run.assert_not_called()
+
+
+def test_code_suggestions_step_turns_off_sql_colouring():
+    with patch.object(upgrade.subprocess, "run") as run, patch("shutil.which", return_value="/usr/bin/jupyter"):
+        run.return_value.returncode = 0
+        assert "SQL colouring" in upgrade.allow_code_suggestions("")
+    assert run.call_args[0][0][1:] == ["labextension", "disable", "jupysql-plugin:syntax-highlighting"]
+    with patch("shutil.which", return_value=None):
+        assert upgrade.allow_code_suggestions("") == ""  # no Jupyter on this machine
+    assert ("0.8.1", "worker", upgrade.allow_code_suggestions) in upgrade.STEPS

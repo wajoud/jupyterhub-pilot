@@ -2,6 +2,16 @@
 
 Each release says where to upgrade (**Hub**, **workers**, or both) and whether a restart is needed. Upgrade with `sudo jupyterhub-pilot upgrade` on each machine (Admin guide → Upgrading).
 
+## 0.8.1 (2026-11-15)
+
+**Upgrade: Hub and every worker.** Hub restart needed; users reload the notebook page.
+
+Fixes from the 0.8.0 cluster test (2026-11-15, 1 Hub + 2 workers, Ubuntu 26.04, from PyPI):
+- **The grey code suggestions never showed on a worker.** The SQL colouring of `jupysql-plugin` (installed on every worker) wiped them on each keystroke. `install-worker` and `upgrade` now turn off that one piece. `%sql`, `%%sql`, the **Format SQL** button and SQL keyword completion still work; SQL inside a `%%sql` cell is no longer coloured as SQL. To have the colouring back and no grey suggestions: `sudo jupyter labextension enable jupysql-plugin:syntax-highlighting`.
+- **Limits and Secrets pages showed every worker as "not reporting" and every server as "stopped".** They held an empty copy of the live worker data, so the "still on the old limit" mark and the ▲ restart note never appeared. Hub restart needed.
+- Secrets page, dark mode: the × that deletes a variable was white on white.
+- Docs: the PyPI page and README quick start now show the HTTPS (Caddy) step and the groups step; the Vault commands paste without editing; Caddy needs a few seconds after a restart before the check.
+
 ## 0.8.0 (2026-11-15)
 
 Released before its cluster test: the Limits page, GPU workers, the Secrets page and code completion have only run in unit tests and on a laptop. Fixes from the test will come as 0.8.1.

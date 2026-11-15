@@ -56,7 +56,15 @@ sudo nano /etc/jupyterhub-pilot/hub.env      # Google client, or test passwords
 sudo systemctl enable --now jupyterhub
 ```
 
-Then put Caddy in front for HTTPS and create the team's group in **Admin → Groups**. The full walkthrough, including HTTPS and a test login without Google: [Install](docs/ADMIN.md#install-hub-and-first-worker), or [step by step on AWS](AWS_EC2_DEPLOYMENT.md).
+**4. HTTPS with Caddy, on the Hub** (needed: login does not work over plain `http://`)
+
+Install Caddy and point it at the Hub: [the commands, with or without a domain](docs/ADMIN.md#3-https-with-caddy-on-the-hub).
+
+**5. In the browser**
+
+Log in as the admin and create the team's group in **Admin → Groups** (`team_alpha`), add users to it, and they can start their servers.
+
+The full walkthrough, including a test login without Google: [Install](docs/ADMIN.md#install-hub-and-first-worker), or [step by step on AWS](AWS_EC2_DEPLOYMENT.md).
 
 ## What it looks like
 
@@ -74,7 +82,7 @@ Example data: two teams, one worker with a GPU and one without.
 
 ![Limits page: a Teams table with each worker's size and limit boxes, and a Users table with the limit each user gets](docs/images/limits.png)
 
-**Secrets** (from 0.8.0, needs Vault). API keys and passwords for a team or a user, set in the browser and given to their notebooks as environment variables. The page shows names only, never values.
+**Secrets** (from 0.8.0, needs Vault). API keys and passwords for a team or a user, set in the browser and given to their notebooks as environment variables. The page shows names only, never values. A notebook server reads them when it starts, so after a change the user stops and starts their server (the page marks who still needs to).
 
 ![Secrets page: a Teams table and a Users table with each one's variable names, a delete button per name, and boxes to add a name and value](docs/images/secrets.png)
 
