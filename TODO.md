@@ -5,7 +5,7 @@ under "Next release". Hub install, worker installs, team routing, JIT user creat
 
 ## 0.8.0 release test plan
 
-Changed on 2026-11-15: 0.8.0 goes to PyPI **first** and is tested from there on a fresh cluster (the 2026-11-10 instances are gone). Fixes found by the test go to `main` through a normal branch and PR and ship as 0.8.1. Tick each line with the date; write what went wrong under it.
+Changed on 2026-11-15: 0.8.0 went to PyPI **first** and was tested from there on a fresh cluster (the 2026-11-10 instances are gone). Fixes found by the test go to `main` through a normal branch and PR and ship as 0.8.1. Tick each line with the date; write what went wrong under it.
 
 On fresh machines part C comes first and replaces part A; to test the upgrade (A), install `jupyterhub-pilot==0.7.0` first. Use the plain PyPI install line from the admin guide, not the zip line below (kept for testing a fix from `main`).
 
@@ -16,14 +16,34 @@ ZIP=https://github.com/wajoud/jupyterhub-pilot/archive/refs/heads/main.zip
 sudo pip3 install --no-cache-dir --break-system-packages --ignore-installed "jupyterhub-pilot[hub] @ $ZIP"
 ```
 
+### Result (2026-11-15)
+
+0.8.0 and 0.8.1 are on PyPI. Tested on a fresh cluster in ap-south-1 (1 Hub + 2 workers, 2 cores / 3.7 GB, Ubuntu 26.04, Vault 2.2.2 dev mode, OpenRouter `openai/gpt-4o-mini`), installed from PyPI as 0.8.0, then upgraded to 0.8.1.
+
+- **Passed:** fresh install (C1–C4), monitoring page (B1–B4), Limits page loads and applies a limit (B5, half of B6), Secrets page and values in notebooks (G1, G2), completion list and grey AI suggestions (H1–H3), upgrade 0.8.0 → 0.8.1 (A3, A4).
+- **Fixed in 0.8.1 and seen working on the cluster:** grey suggestions hidden by jupysql's SQL colouring; Limits and Secrets pages showing "not reporting" / "stopped"; the invisible × on the Secrets page in dark mode.
+- **Not run:** the "old limit" mark (B6), team limits (B7), bad values and 403s (B8), narrow window (B9), ▲ note, delete, read-only policy, Vault off (G3–G6), no-model and off-switch and `/lab` (H4–H6), upgrade from 0.7.0 (A1, A2), GPU (D: AWS quota request for 4 G-instance vCPUs still open), part E.
+
+#### After 0.8.1 (found in this test, not fixed yet)
+
+- [ ] **`upgrade` can reinstall the old version right after a release** and print `hub: 0.8.0 → 0.8.0` as if all were well (pip's cached package list, about 10 minutes). Add `--no-cache-dir` to the pip call in `upgrade.py`, and say "already on the newest version PyPI offers" when nothing changed.
+- [ ] **Limits and Secrets pages: the browser's reload re-sends the last save** (the "saved" banner comes back). Redirect after a save.
+- [ ] **Limits page accepts a memory limit above the worker's RAM** (4G on a 3.7 GB worker) without a word. Warn, do not refuse.
+- [ ] **Monitoring page for a user in no team** says "No worker is reporting". Say "You are not in a team yet: ask an admin".
+- [ ] `docs/images/autocomplete.png` is from a laptop with a stand-in model. Replace with one from a cluster.
+- [ ] Docs: `config.json` for a cloud model goes on **each worker** (`/etc/jupyterhub-pilot/config.json`), with the key as a team secret (`OPENROUTER_API_KEY` etc.), not in the file.
+- [ ] The `v0.8.0` tag and GitHub release were never made (0.8.1 replaced it the same day).
+
 ### A. Upgrade the 0.7.0 cluster (must) — about 20 minutes
 
 The 2026-11-10 cluster (1 Hub + 2 workers, no GPU). If the instances were stopped, the Hub's public IP changed: fix the Caddyfile first.
 
 - [ ] A1. Before: on the Hub note `cat /etc/jupyterhub-pilot/version` (0.7.0), the teams in Admin → Groups, one user's limit on `/hub/limits`, and start one server and leave it running.
 - [ ] A2. Hub: the install line with `hub`, then `sudo jupyterhub-pilot upgrade --no-pip`. Expect `hub: 0.7.0 → 0.8.0`, a warning for both workers (still 0.7.0), and the restart question.
-- [ ] A3. Each worker: the install line with `worker,ai`, then `sudo jupyterhub-pilot upgrade --no-pip`. Expect `worker: 0.7.0 → 0.8.0` and `metrics agent restarted`.
-- [ ] A4. After: `sudo jupyterhub-pilot upgrade --no-pip --yes` on the Hub again shows no worker warning. Teams, the user's limit, homes and the admin login are unchanged. `sudo journalctl -u jupyterhub -n 50` has no traceback.
+- [x] A3. Each worker: the install line with `worker,ai`, then `sudo jupyterhub-pilot upgrade --no-pip`. Expect `worker: 0.7.0 → 0.8.0` and `metrics agent restarted`.
+  - 2026-11-15: done as 0.8.0 → 0.8.1 instead (the 0.7.0 cluster was gone): both workers printed `worker: 0.8.0 → 0.8.1`, the new step and `metrics agent restarted`.
+- [x] A4. After: `sudo jupyterhub-pilot upgrade --no-pip --yes` on the Hub again shows no worker warning. Teams, the user's limit, homes and the admin login are unchanged. `sudo journalctl -u jupyterhub -n 50` has no traceback.
+  - 2026-11-15: done as 0.8.0 → 0.8.1: `hub: 0.8.0 → 0.8.1` with no worker warning; teams, limits, secrets and logins unchanged. **Found:** the first two runs printed `hub: 0.8.0 → 0.8.0` (see "After 0.8.1" below).
 
 ### B. The new pages on the upgraded cluster (must) — about 30 minutes
 
@@ -38,6 +58,7 @@ The 2026-11-10 cluster (1 Hub + 2 workers, no GPU). If the instances were stoppe
 - [x] B5. `/hub/limits` loads and lists **every** user with team, limit and source. (This is the code that never ran on a real JupyterHub.)
   - 2026-11-15: loads and lists teams and users with limit and source. **Found:** every worker said "not reporting" and every server "stopped" (the same on the Secrets page): JupyterHub deep-copies its config, so the pages held an empty copy of the live data. Fixed in 0.8.1; B6's "still on the old limit" mark and G3's ▲ note could not work in 0.8.0.
 - [ ] B6. Limits, one user: type `2G` in a user's Memory box → Save → "Gets now" says `2G set here`; their running server shows "still on the old limit"; after they restart the mark is gone and `/hub/monitoring` shows 2.0 GB. Clear → back to the team or default.
+  - 2026-11-15: with 0.8.1: `4G set here`, and after a stop and start the running server shows "of 4.0 GB". The "still on the old limit" mark itself was not looked at.
 - [ ] B7. Limits, a team: set `3G` / `150%` on team_beta → Save. Admin → Groups → team_beta → properties shows `memory_max` and `cpu_quota`. A team_beta user's next start gets it (Hub log: `MemoryMax=3G (team)`). Empty both boxes → Save → the properties are gone.
 - [ ] B8. Limits: a bad value (`2 gigs`) is refused with a message; Terminal off still works for one user; a normal user gets 403 on `/hub/limits`.
 - [ ] B9. Dark mode and a phone (or a narrow window): both pages readable, nothing cut off.
