@@ -5,7 +5,9 @@ under "Next release". Hub install, worker installs, team routing, JIT user creat
 
 ## 0.8.0 release test plan
 
-0.8.0 is merged to `main` and tested from there **before** it goes to PyPI (a PyPI version can never be replaced). Fixes found by the test go to `main` through a normal branch and PR; then reinstall with the same line. Tick each line with the date; write what went wrong under it. A failed **must** line blocks the release; a failed *later* line becomes a TODO for 0.8.1.
+Changed on 2026-11-15: 0.8.0 goes to PyPI **first** and is tested from there on a fresh cluster (the 2026-11-10 instances are gone). Fixes found by the test go to `main` through a normal branch and PR and ship as 0.8.1. Tick each line with the date; write what went wrong under it.
+
+On fresh machines part C comes first and replaces part A; to test the upgrade (A), install `jupyterhub-pilot==0.7.0` first. Use the plain PyPI install line from the admin guide, not the zip line below (kept for testing a fix from `main`).
 
 Install line used below (Hub: `hub`; worker: `worker,ai`):
 
