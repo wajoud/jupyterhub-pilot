@@ -118,9 +118,9 @@ A user can print their own secret in a notebook and save it in the `.ipynb`. Tel
 ```bash
 vault version                     # check install-hub installed it
 vault server -dev -dev-listen-address=127.0.0.1:8200 > /tmp/vault-dev.log 2>&1 &
-grep "Root Token" /tmp/vault-dev.log
+sleep 2
 export VAULT_ADDR=http://127.0.0.1:8200
-export VAULT_TOKEN=<the root token>
+export VAULT_TOKEN=$(grep "Root Token" /tmp/vault-dev.log | awk '{print $3}')   # the dev server's root token
 ```
 
 **Production.** Use your company's Vault if it has one (skip to step 2 with its address and an admin token). Otherwise run one: the `vault` package ships `/etc/vault.d/vault.hcl` and a `vault` systemd service. Follow HashiCorp's [deployment guide](https://developer.hashicorp.com/vault/tutorials/day-one-raft/raft-deployment-guide) (`vault operator init`, keep the unseal keys and root token safe, `vault operator unseal` after every restart), then enable KV v2:
@@ -150,8 +150,10 @@ path "auth/token/renew-self" {
 POLICY
 
 # Periodic token: lives as long as it is renewed within 32 days.
-vault token create -policy=jupyterhub-pilot -no-default-policy -orphan -period=768h -field=token
+HUB_TOKEN=$(vault token create -policy=jupyterhub-pilot -no-default-policy -orphan -period=768h -field=token)
 ```
+
+`$HUB_TOKEN` is used in step 3: run it in the same terminal.
 
 Upgrading from before 0.8.0: run the `vault policy write` above again to use the Secrets page. The token stays the same and no restart is needed.
 
@@ -164,7 +166,7 @@ If the token expires, servers start without secrets and the Hub log says `permis
 ```bash
 # Address and token go in the root-only env file the jupyterhub service reads
 echo 'VAULT_ADDR=http://127.0.0.1:8200' | sudo tee -a /etc/jupyterhub-pilot/hub.env > /dev/null
-echo 'VAULT_TOKEN=<token from step 2>' | sudo tee -a /etc/jupyterhub-pilot/hub.env > /dev/null
+echo "VAULT_TOKEN=$HUB_TOKEN" | sudo tee -a /etc/jupyterhub-pilot/hub.env > /dev/null
 
 F=/opt/jupyterhub-pilot/hub_settings.json
 sudo jq '.vault_enabled = true | .vault_secret_path = "secret/jupyterhub-pilot"' $F | sudo tee $F.tmp >/dev/null && sudo mv $F.tmp $F

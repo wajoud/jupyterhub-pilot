@@ -28,7 +28,7 @@ class FakeVault:
 
 def _handler(vault, admin=True, enabled=True, **form):
     h = secrets_page.SecretsPageHandler()
-    h.initialize(lambda: enabled, lambda: vault, {"team_alpha": "10.0.1.5"}.get, {})
+    h.initialize(lambda: enabled, lambda: vault, {"team_alpha": "10.0.1.5"}.get, dict)
     h._hub_users = lambda: [("bob", {"team_alpha": {}})]
     h._hub_groups = lambda: [("team_alpha", {}, 1), ("admins", {}, 1)]
     h.current_user = MagicMock(admin=admin)

@@ -86,12 +86,12 @@ class SecretsPageHandler(BaseHandler):
         enabled: Callable[[], bool] = lambda: False,
         vault: Callable[[], Any] = VaultClient,
         worker_ip_for_group: Callable[[str], Optional[str]] = lambda group: None,
-        snapshots: Optional[Dict[str, Dict[str, Any]]] = None,
+        snapshots: Callable[[], Dict[str, Dict[str, Any]]] = dict,
     ) -> None:
         self._enabled = enabled
         self._vault = vault
         self._worker_ip_for_group = worker_ip_for_group
-        self._snapshots = snapshots if snapshots is not None else {}
+        self._snapshots = snapshots
 
     def _require_admin(self) -> None:
         if not self.current_user.admin:
@@ -139,7 +139,7 @@ class SecretsPageHandler(BaseHandler):
             try:
                 by_user, by_team = await asyncio.to_thread(self._load, teams)
                 view = build_view(
-                    self._hub_users(), groups, self._worker_ip_for_group, self._snapshots, by_user, by_team, time.time()
+                    self._hub_users(), groups, self._worker_ip_for_group, self._snapshots(), by_user, by_team, time.time()
                 )
             except VaultError as exc:
                 error = error or str(exc)

@@ -43,6 +43,8 @@ To change it, add this to `config.json` and restart your server:
 
 `enabled: false` turns the grey suggestions off. `model` gives them a smaller, faster model than the magics use; leave it out to use the same one. With a local Ollama on a worker without a GPU, a small model (or off) is the right choice: each suggestion uses the worker's CPUs for a few seconds. With a cloud model, the code around the cursor is sent to that provider, as with the magics.
 
+On a worker the SQL colouring inside `%%sql` cells is turned off, because it hides the grey suggestions (`%sql` itself, **Format SQL** and SQL keyword completion still work). An admin can swap the two with `sudo jupyter labextension enable jupysql-plugin:syntax-highlighting` on the worker.
+
 Each user can also switch either one off for themselves: **Settings → Settings Editor → Code Completion** (the list) and **Inline Completer** (the grey text).
 
 ### Terminal and JupyterLab

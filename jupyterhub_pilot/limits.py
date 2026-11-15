@@ -148,12 +148,12 @@ class LimitsPageHandler(BaseHandler):
         store: Any,
         worker_ip_for_group: Callable[[str], Optional[str]] = lambda group: None,
         defaults: Callable[[], Optional[Dict[str, Any]]] = lambda: None,
-        snapshots: Optional[Dict[str, Dict[str, Any]]] = None,
+        snapshots: Callable[[], Dict[str, Dict[str, Any]]] = dict,
     ) -> None:
         self.store = store
         self._worker_ip_for_group = worker_ip_for_group
         self._defaults = defaults
-        self._snapshots = snapshots if snapshots is not None else {}
+        self._snapshots = snapshots
 
     def _require_admin(self) -> None:
         if not self.current_user.admin:
@@ -185,7 +185,7 @@ class LimitsPageHandler(BaseHandler):
     async def _render(self, error: str = "", message: str = "") -> None:
         view = build_view(
             self._hub_users(), self._hub_groups(), self.store.list_user_limits(),
-            self._defaults(), self._worker_ip_for_group, self._snapshots,
+            self._defaults(), self._worker_ip_for_group, self._snapshots(),
         )
         self.finish(await self.render_template("limits.html", error=error, message=message, **view))
 

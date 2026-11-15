@@ -153,7 +153,8 @@ c.JupyterHub.extra_handlers = [
             "store": _store,
             "worker_ip_for_group": worker_ip_for_group,
             "defaults": lambda: hub_settings.get("resource_limits"),
-            "snapshots": monitoring_handler._WORKER_SNAPSHOTS,  # the limit each running server really has
+            # A function, not the dict: JupyterHub deep-copies its config, and a copied dict stays empty.
+            "snapshots": lambda: monitoring_handler._WORKER_SNAPSHOTS,  # the limit each running server really has
         },
     ),
     # Vault variables per team and per user, names only (admins only)
@@ -164,7 +165,7 @@ c.JupyterHub.extra_handlers = [
             "enabled": lambda: bool(hub_settings.get("vault_enabled")),
             "vault": lambda: VaultClient(hub_settings.get("vault_secret_path", "secret/jupyterhub-pilot")),
             "worker_ip_for_group": worker_ip_for_group,
-            "snapshots": monitoring_handler._WORKER_SNAPSHOTS,  # which servers run, and since when
+            "snapshots": lambda: monitoring_handler._WORKER_SNAPSHOTS,  # which servers run, and since when
         },
     ),
 ]

@@ -141,11 +141,13 @@ echo $PUBLIC_IP
 printf '{\n\tdefault_sni %s\n}\n\nhttps://%s {\n\ttls internal\n\tencode zstd gzip\n\treverse_proxy <HUB_PRIVATE_IP>:8000\n}\n' "$PUBLIC_IP" "$PUBLIC_IP" | sudo tee /etc/caddy/Caddyfile
 sudo systemctl restart caddy
 
-# Check Caddy answers (should print 200, once the Hub is running)
+# Check Caddy answers (should print 200, once the Hub is running). Caddy needs a few
+# seconds after the restart to make its certificate: 000 right away means try again.
+sleep 5
 curl -sk -o /dev/null -w '%{http_code}\n' --resolve $PUBLIC_IP:443:127.0.0.1 https://$PUBLIC_IP/hub/login
 ```
 
-`default_sni` is needed because browsers send no server name for a bare IP; without it the HTTPS handshake fails. Test from the Hub with `--resolve` as above: a plain `curl https://$PUBLIC_IP` from the Hub itself goes out and back in through the security group, which only allows your IP, so it prints `000` even when Caddy works. Then open `https://<HUB_PUBLIC_IP>` from your own machine.
+`sudo journalctl -u caddy` shows `failed to install root certificate` once: that is expected (Caddy cannot add its own certificate to the system's trusted list) and changes nothing. `default_sni` is needed because browsers send no server name for a bare IP; without it the HTTPS handshake fails. Test from the Hub with `--resolve` as above: a plain `curl https://$PUBLIC_IP` from the Hub itself goes out and back in through the security group, which only allows your IP, so it prints `000` even when Caddy works. Then open `https://<HUB_PUBLIC_IP>` from your own machine.
 
 Now continue with [Start, stop and restart](#start-stop-and-restart).
 

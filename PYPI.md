@@ -6,7 +6,8 @@ One JupyterHub for many teams. Each team gets its own worker VM, and every noteb
 - **A Linux account per user**, with cgroup memory and CPU limits on every notebook server.
 - **AI magics** in every notebook: `%do`, `%fix`, `%review`, `%rework` (Ollama, OpenAI, Claude or Gemini through LiteLLM, or an MCP server).
 - **Live monitoring** at `/hub/monitoring`: each worker's CPU, memory, disk and network, and each user's usage against their limits.
-- **Google login**, SQLite state that survives Hub restarts, optional Vault secrets, and a built-in load test.
+- **Secrets from Vault** (optional): API keys and passwords per user or per team, set on the **Secrets** page and read in a notebook with `os.environ`. They are read when a server starts, so after a change the user stops and starts their server.
+- **Google login**, SQLite state that survives Hub restarts, and a built-in load test.
 
 ## Install
 
@@ -38,7 +39,24 @@ sudo nano /etc/jupyterhub-pilot/hub.env                          # Google client
 sudo systemctl enable --now jupyterhub
 ```
 
-Put [Caddy](https://caddyserver.com/) in front for HTTPS, create a group per team in **Admin → Groups**, and users can start their servers.
+**HTTPS with Caddy, on the Hub (needed: login does not work over plain `http://`)**
+
+```bash
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update && sudo apt install -y caddy
+
+echo 'hub.example.com {
+    encode zstd gzip
+    reverse_proxy <hub-private-ip>:8000
+}' | sudo tee /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+```
+
+Point your domain at the Hub's public IP and open ports 80 and 443. No domain yet? Caddy can serve the bare public IP with its own certificate: [HTTPS with Caddy → No domain yet](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/ADMIN.md#3-https-with-caddy-on-the-hub), with the [test login](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/ADMIN.md#option-c-test-login-no-google-testing-only) in place of Google.
+
+**Last, in the browser:** log in as the admin, create a group per team in **Admin → Groups** (`team_alpha`, `team_beta`, the exact team names), add users to them, and they can start their servers.
 
 ## In a notebook
 

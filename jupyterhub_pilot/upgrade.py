@@ -97,10 +97,26 @@ def install_worker_packages(_config_dir: str) -> str:
     return f"installed {' '.join(missing)}"
 
 
+def allow_code_suggestions(_config_dir: str) -> str:
+    """0.8.1: jupysql's SQL colouring rewrites the editor on every keystroke, which wipes
+    the grey code suggestions. Turn off that one piece; %sql and Format SQL keep working."""
+    import shutil
+
+    jupyter = shutil.which("jupyter")
+    if not jupyter:
+        return ""
+    done = subprocess.run(
+        [jupyter, "labextension", "disable", "jupysql-plugin:syntax-highlighting"],
+        capture_output=True,
+    )
+    return "SQL colouring in %%sql cells turned off (it hid the code suggestions)" if done.returncode == 0 else ""
+
+
 STEPS: List[Tuple[str, str, Callable[[str], str]]] = [
     ("0.4.0", "worker", fix_metrics_url),
     ("0.6.0", "hub", add_settings_defaults),
     ("0.6.0", "worker", install_worker_packages),
+    ("0.8.1", "worker", allow_code_suggestions),
 ]
 
 

@@ -99,6 +99,9 @@ EOF
 systemctl daemon-reload
 systemctl enable jupyterhub_pilot-metrics
 systemctl restart jupyterhub_pilot-metrics
+# jupysql's SQL colouring rewrites the editor on every keystroke, which wipes the grey code
+# suggestions. Turn off that one piece; %sql and the Format SQL button keep working.
+jupyter labextension disable jupysql-plugin:syntax-highlighting >/dev/null 2>&1 || true
 # `jupyterhub-pilot upgrade` runs only the steps newer than this.
 "$PYTHON" -c "import jupyterhub_pilot as p; print(p.__version__)" > /etc/jupyterhub-pilot/version
 
