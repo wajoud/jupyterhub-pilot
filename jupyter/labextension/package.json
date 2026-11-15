@@ -1,0 +1,12 @@
+{
+  "name": "jupyterhub-pilot-complete",
+  "version": "1.0.0",
+  "description": "Inline code suggestions from the JupyterHub-Pilot model",
+  "jupyterlab": {
+    "extension": true,
+    "_build": {
+      "load": "static/remoteEntry.1.js",
+      "extension": "./extension"
+    }
+  }
+}

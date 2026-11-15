@@ -20,6 +20,7 @@ Docs:
 - The README is now a short overview with screenshots. Its how-to sections moved to `docs/ADMIN.md` (install, teams, workers, limits, upgrades, troubleshooting), `docs/USING.md` (notebooks) and `docs/DEVELOPMENT.md`.
 
 Workers:
+- **Code completion while you type** (users restart their server once): the list of names opens without the Tab key, and a grey AI suggestion appears ahead of the cursor (Tab accepts) from the model in `config.json`. It asks only after a pause, one request at a time per user, with a short answer and timeout. Turn it off or give it a smaller model with `"autocomplete"` in `config.json` ([Using → Code completion](https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/USING.md#code-completion-while-you-type)). No new packages.
 - **GPU workers:** the metrics agent reports NVIDIA GPUs (usage, memory, temperature, memory per user) where `nvidia-smi` exists. `install-worker` installs the driver only on a machine with a GPU (Ubuntu) and asks for a reboot. Workers without a GPU are unchanged.
 
 ## 0.7.0 (2026-11-10)

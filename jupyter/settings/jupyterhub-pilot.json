@@ -1,0 +1,5 @@
+{
+  "@jupyterlab/completer-extension:manager": {
+    "autoCompletion": true
+  }
+}
