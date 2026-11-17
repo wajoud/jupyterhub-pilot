@@ -8,6 +8,25 @@ One JupyterHub for many teams. Each team gets its own worker VM, every user gets
 
 ![Monitoring page: what needs attention, totals, the busiest users, and one card per team's worker](docs/images/monitoring.png)
 
+## Try the AI magics in 2 minutes
+
+No VMs needed for this part: the magics work in any Jupyter on your own machine. With [Ollama](https://ollama.com) installed:
+
+```bash
+pip install "jupyterhub-pilot[ai]" jupyterlab pandas matplotlib
+ollama pull qwen2.5-coder:7b
+jupyter lab
+```
+
+```python
+%load_ext jupyterhub_pilot.extension
+%do load data/sales.csv and plot monthly revenue
+```
+
+![A notebook where %do writes plotting code into the next cell, the code fails on a pandas error, and %fix writes a corrected cell that draws the chart](docs/images/magics-demo.gif)
+
+Recorded in real time on a laptop with `qwen2.5-coder:7b`, a small model that runs locally, so no data leaves the machine. Here the model's first code used a pandas option that pandas 3 removed; `%fix` read the error and corrected it. No Ollama? Use an OpenAI, Claude or Gemini key instead: [AI magics](docs/AI_MAGICS.md).
+
 ## What you get
 
 - **A worker VM per team.** One heavy team cannot slow down another.
@@ -27,9 +46,11 @@ Every feature, and which ones are tested on real machines: [Features](docs/FEATU
 
 A user logs in to the Hub and clicks **Start My Server**. The Hub finds their team's worker, creates their Linux account there if needed, and starts their notebook server under their RAM and CPU limit.
 
-## Quick start
+## Quick start: a cluster
 
-You need two Ubuntu VMs (24.04 or 26.04) on the same private network: one Hub and one worker. Check ports, disk size and Google login first: [Before you start](docs/ADMIN.md#before-you-start).
+You need two Ubuntu VMs (24.04 or 26.04) on the same private network: one Hub and one worker. Check ports and disk size first: [Before you start](docs/ADMIN.md#before-you-start).
+
+For a first look you do not need a domain or a Google client: use the [test login](docs/ADMIN.md#option-c-test-login-no-google-testing-only) (two passwords in step 3) and [Caddy on the Hub's IP](docs/ADMIN.md#3-https-with-caddy-on-the-hub).
 
 **1. On the Hub VM**
 
