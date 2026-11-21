@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use JupyterPilot, please cite it as below."
+title: "JupyterPilot (jupyterhub-pilot)"
+abstract: "Agentic AI coding partner for JupyterHub and IPython"
+type: software
+authors:
+  - given-names: Wajoud
+    family-names: Noorani
+    website: "https://wajoudnoorani.com/"
+repository-code: "https://github.com/wajoud/jupyterhub-pilot"
+url: "https://pypi.org/project/jupyterhub-pilot/"
+license: MIT
+version: 0.8.1
+date-released: "2026-11-15"
