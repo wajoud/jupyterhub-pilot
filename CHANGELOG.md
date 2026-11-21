@@ -2,6 +2,13 @@
 
 Each release says where to upgrade (**Hub**, **workers**, or both) and whether a restart is needed. Upgrade with `sudo jupyterhub-pilot upgrade` on each machine (Admin guide → Upgrading).
 
+## 0.8.2 (2026-11-21)
+
+**Upgrade: not needed.** No code changes; this release updates the package details on PyPI.
+
+- Author shown as Wajoud Noorani, with a link to https://wajoudnoorani.com/ under the project links.
+- New `CITATION.cff`: GitHub shows a **Cite this repository** button.
+
 ## 0.8.1 (2026-11-15)
 
 **Upgrade: Hub and every worker.** Hub restart needed; users reload the notebook page.
