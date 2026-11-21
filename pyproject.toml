@@ -45,6 +45,7 @@ dependencies = [
 Homepage = "https://github.com/wajoud/jupyterhub-pilot"
 Repository = "https://github.com/wajoud/jupyterhub-pilot.git"
 "Bug Tracker" = "https://github.com/wajoud/jupyterhub-pilot/issues"
+Author = "https://wajoudnoorani.com/"
 "AWS EC2 Deployment" = "https://github.com/wajoud/jupyterhub-pilot/blob/main/AWS_EC2_DEPLOYMENT.md"
 "Vault Integration" = "https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/SECURITY.md#4-vault-secret-injection"
 "Monitoring Dashboard" = "https://github.com/wajoud/jupyterhub-pilot/blob/main/docs/MONITORING.md"

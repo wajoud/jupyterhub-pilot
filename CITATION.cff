@@ -6,6 +6,7 @@ type: software
 authors:
   - given-names: Wajoud
     family-names: Noorani
+    website: "https://wajoudnoorani.com/"
 repository-code: "https://github.com/wajoud/jupyterhub-pilot"
 url: "https://pypi.org/project/jupyterhub-pilot/"
 license: MIT
